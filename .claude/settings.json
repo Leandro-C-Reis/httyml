@@ -1,0 +1,24 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/leandro/.local/share/mise/installs/python/latest/bin/graphify hook-guard search"
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/leandro/.local/share/mise/installs/python/latest/bin/graphify hook-guard read"
+          }
+        ]
+      }
+    ]
+  }
+}
