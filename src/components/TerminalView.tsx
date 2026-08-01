@@ -18,6 +18,18 @@ type TerminalViewProps = {
   terminalId: string;
 };
 
+function stateVariant(state: TerminalState): "rodando" | "parado" | "encerrado" {
+  if (state === "Rodando") return "rodando";
+  if (state === "Parado") return "parado";
+  return "encerrado";
+}
+
+function stateLabel(state: TerminalState): string {
+  if (state === "Rodando") return "rodando";
+  if (state === "Parado") return "parado";
+  return `encerrado (${state.Encerrado.exit_code})`;
+}
+
 export function TerminalView({ terminalId }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<TerminalState>("Rodando");
@@ -73,10 +85,10 @@ export function TerminalView({ terminalId }: TerminalViewProps) {
     <div className="terminal-panel">
       <div className="terminal-toolbar">
         <span
-          className={`terminal-status terminal-status--${isRunning ? "rodando" : "parado"}`}
+          className={`terminal-status terminal-status--${stateVariant(state)}`}
           data-testid="terminal-status"
         >
-          {isRunning ? "rodando" : "parado"}
+          {stateLabel(state)}
         </span>
         {isRunning ? (
           <button

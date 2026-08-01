@@ -114,4 +114,27 @@ describe("TerminalView", () => {
     await userEvent.click(restartButton);
     expect(daemon.restartTerminal).toHaveBeenCalledWith("abc123");
   });
+
+  it("shows a distinct encerrado indicator with the exit code and a restart action", async () => {
+    render(<TerminalView terminalId="abc123" />);
+    await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());
+    const handleMessage = vi.mocked(daemon.onTerminalOutput).mock.calls[0][1];
+
+    act(() => {
+      handleMessage({
+        type: "StateChanged",
+        terminal_id: "abc123",
+        state: { Encerrado: { exit_code: 7 } },
+      });
+    });
+
+    const status = screen.getByTestId("terminal-status");
+    expect(status).toHaveTextContent(/encerrado/i);
+    expect(status).toHaveTextContent("7");
+    expect(status.className).toContain("terminal-status--encerrado");
+
+    const restartButton = screen.getByRole("button", { name: /restart/i });
+    await userEvent.click(restartButton);
+    expect(daemon.restartTerminal).toHaveBeenCalledWith("abc123");
+  });
 });

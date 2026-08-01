@@ -132,10 +132,19 @@ async fn handle_message(
 
             let writer = writer.clone();
             tokio::spawn(async move {
+                use tokio::sync::broadcast::error::RecvError;
                 loop {
                     tokio::select! {
                         chunk = output_rx.recv() => {
-                            let Ok(chunk) = chunk else { break };
+                            let chunk = match chunk {
+                                Ok(chunk) => chunk,
+                                // Fell behind the ring buffer — some output was
+                                // dropped, but the Sender is still alive and
+                                // producing more, so keep forwarding rather
+                                // than abandoning this attach permanently.
+                                Err(RecvError::Lagged(_)) => continue,
+                                Err(RecvError::Closed) => break,
+                            };
                             let msg = DaemonMessage::Output {
                                 terminal_id: terminal_id.clone(),
                                 data: STANDARD.encode(chunk),
@@ -145,7 +154,11 @@ async fn handle_message(
                             }
                         }
                         state = state_rx.recv() => {
-                            let Ok(state) = state else { break };
+                            let state = match state {
+                                Ok(state) => state,
+                                Err(RecvError::Lagged(_)) => continue,
+                                Err(RecvError::Closed) => break,
+                            };
                             let msg = DaemonMessage::StateChanged {
                                 terminal_id: terminal_id.clone(),
                                 state,

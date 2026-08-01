@@ -17,7 +17,7 @@ Processo separado do app, sidecar bundled na aplicação Tauri, responsável por
 _Avoid_: Server, backend
 
 **Estado do Terminal**:
-Um Terminal está em um destes estados: _rodando_ (processo ativo), _parado_ (encerrado manualmente pelo usuário, config preservada), ou _encerrado_ (processo morreu sozinho — guarda exit code e motivo, distinto de "parado").
+Um Terminal está em um destes estados: _rodando_ (processo ativo), _parado_ (encerrado manualmente pelo usuário, config preservada), ou _encerrado_ (processo morreu sozinho — guarda o exit code, distinto de "parado").
 _Avoid_: Stopped (ambíguo entre parado manual e encerrado sozinho), killed
 
 ## Rules

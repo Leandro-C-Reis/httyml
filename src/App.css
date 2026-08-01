@@ -2,6 +2,7 @@
   --nb-primary: #fdc800;
   --nb-secondary: #432dd7;
   --nb-success: #16a34a;
+  --nb-warning: #d97706;
   --nb-danger: #dc2626;
   --nb-surface: #fbfbf9;
   --nb-text: #1c293c;
@@ -138,6 +139,10 @@ button:disabled {
 
 .terminal-status--parado {
   background-color: var(--nb-danger);
+}
+
+.terminal-status--encerrado {
+  background-color: var(--nb-warning);
 }
 
 .terminal-view {

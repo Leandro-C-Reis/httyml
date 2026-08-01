@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-export type TerminalState = "Rodando" | "Parado";
+export type TerminalState = "Rodando" | "Parado" | { Encerrado: { exit_code: number } };
 
 export type DaemonMessage =
   | { type: "Created"; terminal_id: string }

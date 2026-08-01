@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
@@ -50,16 +51,22 @@ impl Scrollback {
     }
 }
 
-/// A Terminal's lifecycle state. `Rodando` and `Parado` only for now — a
-/// future ticket adds `Encerrado` for a process that exited on its own.
+/// A Terminal's lifecycle state. `Parado` is a user-initiated stop;
+/// `Encerrado` is the process exiting on its own (and records why).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TerminalState {
     Rodando,
     Parado,
+    Encerrado { exit_code: i32 },
 }
 
 /// The live PTY/process bits of a Terminal — present only while `Rodando`.
+/// `generation` identifies which `start_process` call produced it, so a
+/// reader thread from a since-replaced process can tell "the process I was
+/// reading died" apart from "a restart already installed a newer one" —
+/// see `handle_process_exit`.
 struct LiveProcess {
+    generation: u64,
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     child: Box<dyn Child + Send>,
@@ -74,9 +81,13 @@ pub struct TerminalHandle {
     pub name: Option<String>,
     pub cwd: String,
     startup_command: Option<String>,
-    /// Serializes stop/restart so two concurrent calls can't both observe
-    /// `Parado` and both spawn a process — see `stop`/`restart`.
+    /// Serializes `stop`, `restart`, and `handle_process_exit` against each
+    /// other so none of the three can act on a `process`/`state` pair that
+    /// another one is concurrently changing.
     lifecycle: Mutex<()>,
+    /// Incremented on every `start_process` call; tags each `LiveProcess`
+    /// with the generation that created it (see `LiveProcess::generation`).
+    generation: AtomicU64,
     process: Mutex<Option<LiveProcess>>,
     state: Mutex<TerminalState>,
     pub scrollback: Arc<Mutex<Scrollback>>,
@@ -102,6 +113,7 @@ impl TerminalHandle {
             cwd,
             startup_command,
             lifecycle: Mutex::new(()),
+            generation: AtomicU64::new(0),
             process: Mutex::new(None),
             state: Mutex::new(TerminalState::Parado),
             scrollback,
@@ -163,16 +175,17 @@ impl TerminalHandle {
         }
 
         let mut reader = pair.master.try_clone_reader()?;
+        let generation = self.generation.fetch_add(1, Ordering::SeqCst);
 
         *self.process.lock().unwrap() = Some(LiveProcess {
+            generation,
             master: pair.master,
             writer,
             child,
         });
         self.set_state(TerminalState::Rodando);
 
-        let scrollback = self.scrollback.clone();
-        let tx = self.tx.clone();
+        let handle = self.clone();
         std::thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
@@ -180,17 +193,42 @@ impl TerminalHandle {
                     Ok(0) => break,
                     Ok(n) => {
                         let chunk = buf[..n].to_vec();
-                        if let Ok(mut sb) = scrollback.lock() {
+                        if let Ok(mut sb) = handle.scrollback.lock() {
                             sb.push(&chunk);
-                            let _ = tx.send(chunk);
+                            let _ = handle.tx.send(chunk);
                         }
                     }
                     Err(_) => break,
                 }
             }
+            handle.handle_process_exit(generation);
         });
 
         Ok(())
+    }
+
+    /// Called by the reader thread once its PTY closes. Only acts if
+    /// `process` still holds the *same generation* this reader thread was
+    /// spawned for: if it's `None`, `stop` already reaped it; if it holds a
+    /// different (newer) generation, a `restart` already replaced it while
+    /// this stale thread was still blocked in `read` — either way, someone
+    /// else already decided this Terminal's state and this stale thread
+    /// must not touch (or reap) a process that isn't its own.
+    fn handle_process_exit(&self, generation: u64) {
+        let _guard = self.lifecycle.lock().unwrap();
+        let mut process = self.process.lock().unwrap();
+        let is_mine = matches!(process.as_ref(), Some(live) if live.generation == generation);
+        if !is_mine {
+            return;
+        }
+        let mut live = process.take().unwrap();
+        drop(process);
+        let exit_code = live
+            .child
+            .wait()
+            .map(|status| status.exit_code() as i32)
+            .unwrap_or(-1);
+        self.set_state(TerminalState::Encerrado { exit_code });
     }
 
     fn set_state(&self, state: TerminalState) {
@@ -200,15 +238,17 @@ impl TerminalHandle {
 
     /// Kills the running process and moves to `Parado`. The config (cwd,
     /// name, startup command) and scrollback are untouched. A no-op if
-    /// already `Parado`.
+    /// there's no live process (already `Parado` or `Encerrado`) — in
+    /// particular this must NOT force `Parado` over an `Encerrado` the
+    /// reader thread already recorded.
     pub fn stop(&self) -> anyhow::Result<()> {
         let _guard = self.lifecycle.lock().unwrap();
         let live = self.process.lock().unwrap().take();
         if let Some(mut live) = live {
             let _ = live.child.kill();
             let _ = live.child.wait();
+            self.set_state(TerminalState::Parado);
         }
-        self.set_state(TerminalState::Parado);
         Ok(())
     }
 

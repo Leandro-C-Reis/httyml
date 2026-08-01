@@ -15,7 +15,7 @@ struct TestClient {
 impl TestClient {
     async fn connect(socket_path: &std::path::Path) -> Self {
         // The daemon is started concurrently; retry until the socket exists.
-        for _ in 0..100 {
+        for _ in 0..20 {
             if let Ok(stream) = UnixStream::connect(socket_path).await {
                 return Self { stream };
             }
@@ -414,4 +414,209 @@ async fn config_survives_stop_independently_of_restart_reuse() {
         })
         .await;
     client.expect_output_containing(&expected_cwd).await;
+}
+
+#[tokio::test]
+async fn process_exiting_on_its_own_transitions_to_encerrado_with_exit_code() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    client
+        .send(&ClientMessage::CreateTerminal {
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: Some("echo before-exit; exit 7".to_string()),
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+
+    client.expect_output_containing("before-exit").await;
+    client
+        .expect_state(TerminalState::Encerrado { exit_code: 7 })
+        .await;
+}
+
+#[tokio::test]
+async fn scrollback_remains_attachable_after_the_process_exits_on_its_own() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    client
+        .send(&ClientMessage::CreateTerminal {
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: Some("echo exit-scrollback-marker; exit 3".to_string()),
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    // Give the process time to print and exit before attaching fresh.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    let scrollback = match client.recv().await {
+        DaemonMessage::Scrollback { data, .. } => STANDARD.decode(data).unwrap(),
+        other => panic!("expected Scrollback, got {other:?}"),
+    };
+    let text = String::from_utf8_lossy(&scrollback);
+    assert!(
+        text.contains("exit-scrollback-marker"),
+        "expected scrollback to survive the process exiting on its own, got: {text:?}"
+    );
+
+    client
+        .expect_state(TerminalState::Encerrado { exit_code: 3 })
+        .await;
+}
+
+#[tokio::test]
+async fn restart_works_from_encerrado_same_as_from_parado() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    client
+        .send(&ClientMessage::CreateTerminal {
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: Some("echo encerrado-restart-marker; exit 1".to_string()),
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+    client
+        .expect_output_containing("encerrado-restart-marker")
+        .await;
+    client
+        .expect_state(TerminalState::Encerrado { exit_code: 1 })
+        .await;
+
+    client
+        .send(&ClientMessage::Restart {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_state(TerminalState::Rodando).await;
+
+    // The startup command ran again on the fresh process — same stored config.
+    client
+        .expect_output_containing("encerrado-restart-marker")
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rapid_stop_restart_cycles_never_corrupt_a_later_process() {
+    // Regression test: a killed process's reader thread only notices EOF
+    // asynchronously, after `stop()` has already returned. If a `restart`
+    // races in during that window, the stale reader thread must not mistake
+    // the newly-installed process for its own dead one (see the
+    // `generation` tag on `LiveProcess` / `handle_process_exit`) — that bug
+    // would either hang future stop/restart calls or spuriously mark a
+    // perfectly live process `Encerrado`.
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    client
+        .send(&ClientMessage::CreateTerminal {
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: None,
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+
+    // Stop immediately followed by restart, with no delay — racing the
+    // stop-killed process's reader thread against the restart, repeatedly.
+    for _ in 0..20 {
+        client
+            .send(&ClientMessage::Stop {
+                terminal_id: terminal_id.clone(),
+            })
+            .await;
+        client
+            .send(&ClientMessage::Restart {
+                terminal_id: terminal_id.clone(),
+            })
+            .await;
+    }
+
+    // Give any stale reader threads from earlier generations time to notice
+    // EOF and (if the bug were present) clobber the final process or wedge
+    // `lifecycle` forever.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // The terminal must still be genuinely usable: commands still run...
+    client
+        .send(&ClientMessage::Write {
+            terminal_id: terminal_id.clone(),
+            data: STANDARD.encode("echo still-alive\n"),
+        })
+        .await;
+    client.expect_output_containing("still-alive").await;
+
+    // ...and a fresh stop/restart still completes. `expect_state`'s 5s
+    // timeout is what actually catches the bug: a stale thread stuck
+    // blocking on `child.wait()` for a live process would hold `lifecycle`
+    // forever and hang these.
+    client
+        .send(&ClientMessage::Stop {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_state(TerminalState::Parado).await;
+
+    client
+        .send(&ClientMessage::Restart {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_state(TerminalState::Rodando).await;
 }
