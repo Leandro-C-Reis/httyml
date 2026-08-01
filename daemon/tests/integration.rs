@@ -152,9 +152,19 @@ fn temp_socket_path() -> (tempfile::TempDir, std::path::PathBuf) {
     (dir, path)
 }
 
+/// Spawns a Daemon using a config file alongside the socket in the same
+/// temp directory — fine for every test that doesn't care about
+/// persistence specifically. Tests that do (simulating a Daemon restart)
+/// use `spawn_daemon_with_config` instead, to share one config path across
+/// two separate `run()` calls.
 fn spawn_daemon(socket_path: std::path::PathBuf) {
+    let config_path = socket_path.with_file_name("projects.json");
+    spawn_daemon_with_config(socket_path, config_path);
+}
+
+fn spawn_daemon_with_config(socket_path: std::path::PathBuf, config_path: std::path::PathBuf) {
     tokio::spawn(async move {
-        let _ = httyml_daemon::run(&socket_path).await;
+        let _ = httyml_daemon::run(&socket_path, &config_path).await;
     });
 }
 
@@ -1182,4 +1192,145 @@ async fn delete_project_cascades_to_its_terminals() {
         DaemonMessage::Scrollback { .. } => {}
         other => panic!("expected the survivor Terminal to still be attachable, got {other:?}"),
     }
+}
+
+#[tokio::test]
+async fn config_survives_a_daemon_restart() {
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("projects.json");
+
+    // "Daemon A" — creates a rich-config Terminal, then is abandoned (as if
+    // the Daemon process had been killed/restarted) without ever stopping it.
+    let socket_a = config_dir.path().join("daemon-a.sock");
+    spawn_daemon_with_config(socket_a.clone(), config_path.clone());
+
+    let mut client_a = TestClient::connect(&socket_a).await;
+    let project_id = client_a.create_project("persisted-project").await;
+
+    let cwd = std::fs::canonicalize("/tmp").unwrap().display().to_string();
+    let mut env_vars = std::collections::HashMap::new();
+    env_vars.insert(
+        "HTTYML_PERSIST_VAR".to_string(),
+        "persisted-value".to_string(),
+    );
+    client_a
+        .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
+            env_vars,
+            shell: None,
+            scrollback_lines: Some(1234),
+            cwd: cwd.clone(),
+            name: Some("persisted-terminal".to_string()),
+            startup_command: Some("echo persisted-marker".to_string()),
+        })
+        .await;
+    let terminal_id = match client_a.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    // "Daemon B" — a completely fresh Registry (different socket, no shared
+    // in-memory state with A), loading the same config file. Simulates the
+    // Daemon process having restarted.
+    let socket_b = config_dir.path().join("daemon-b.sock");
+    spawn_daemon_with_config(socket_b.clone(), config_path.clone());
+    let mut client_b = TestClient::connect(&socket_b).await;
+
+    client_b.send(&ClientMessage::ListProjects).await;
+    match client_b.recv().await {
+        DaemonMessage::Projects { projects } => {
+            let reloaded = projects
+                .iter()
+                .find(|p| p.id == project_id)
+                .unwrap_or_else(|| panic!("project not reloaded, got: {projects:?}"));
+            assert_eq!(reloaded.name, "persisted-project");
+        }
+        other => panic!("expected Projects, got {other:?}"),
+    }
+
+    client_b
+        .send(&ClientMessage::ListTerminals {
+            project_id: project_id.clone(),
+        })
+        .await;
+    match client_b.recv().await {
+        DaemonMessage::Terminals { terminals, .. } => {
+            let reloaded = terminals
+                .iter()
+                .find(|t| t.id == terminal_id)
+                .unwrap_or_else(|| panic!("terminal not reloaded, got: {terminals:?}"));
+            assert_eq!(reloaded.name.as_deref(), Some("persisted-terminal"));
+            // Live process state is never persisted — reloaded Terminals are
+            // always Parado, regardless of what they were doing before.
+            assert_eq!(reloaded.state, TerminalState::Parado);
+        }
+        other => panic!("expected Terminals, got {other:?}"),
+    }
+
+    // Restarting the reloaded Terminal must reuse its persisted config: same
+    // cwd/startup_command/env_vars/scrollback_lines, not just an empty shell.
+    client_b
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client_b.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+    client_b
+        .send(&ClientMessage::Restart {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client_b.expect_state(TerminalState::Rodando).await;
+    client_b.expect_output_containing("persisted-marker").await;
+
+    client_b
+        .send(&ClientMessage::Write {
+            terminal_id,
+            data: STANDARD.encode("echo VAR-IS-$HTTYML_PERSIST_VAR; pwd\n"),
+        })
+        .await;
+    client_b
+        .expect_output_containing("VAR-IS-persisted-value")
+        .await;
+    client_b.expect_output_containing(&cwd).await;
+}
+
+#[tokio::test]
+async fn reloaded_terminals_never_stream_output_without_an_explicit_attach() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("projects.json");
+
+    let socket_a = dir.path().join("daemon-a.sock");
+    spawn_daemon_with_config(socket_a.clone(), config_path.clone());
+    let mut client_a = TestClient::connect(&socket_a).await;
+    let project_id = client_a.create_project("quiet-project").await;
+    client_a
+        .send(&ClientMessage::CreateTerminal {
+            project_id,
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: None,
+        })
+        .await;
+    match client_a.recv().await {
+        DaemonMessage::Created { .. } => {}
+        other => panic!("expected Created, got {other:?}"),
+    }
+
+    let socket_b = dir.path().join("daemon-b.sock");
+    spawn_daemon_with_config(socket_b.clone(), config_path.clone());
+
+    // A fresh connection that never sends Attach must never receive
+    // anything — reloading Terminals on Daemon startup must not itself
+    // start streaming to arbitrary connections.
+    let mut silent_client = TestClient::connect(&socket_b).await;
+    silent_client
+        .expect_silence(Duration::from_millis(300))
+        .await;
 }

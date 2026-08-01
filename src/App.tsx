@@ -21,6 +21,10 @@ function App() {
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [terminals, setTerminals] = useState<TerminalInfo[]>([]);
+  // Terminals the user has actually opened a tab for at least once — only
+  // these get a mounted TerminalView (and so only these ever attach).
+  // Listing a Project's Terminals must never imply opening any of them.
+  const [openedTerminalIds, setOpenedTerminalIds] = useState<string[]>([]);
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
   const [lastCwd, setLastCwd] = useState("");
   const [ready, setReady] = useState(false);
@@ -36,19 +40,32 @@ function App() {
     });
   }, []);
 
-  async function refreshTerminals(projectId: string, keepActive: string | null) {
+  async function refreshTerminals(projectId: string) {
     latestProjectRequest.current = projectId;
     const list = await listTerminals(projectId);
     if (latestProjectRequest.current !== projectId) return;
     setTerminals(list);
-    setActiveTerminalId(list.some((t) => t.id === keepActive) ? keepActive : (list[0]?.id ?? null));
+    // Prune ids for Terminals that no longer exist (e.g. deleted) — this
+    // never adds new ones: opening a tab is always an explicit action.
+    setOpenedTerminalIds((prev) => prev.filter((id) => list.some((t) => t.id === id)));
+    setActiveTerminalId((prevActive) =>
+      prevActive && list.some((t) => t.id === prevActive) ? prevActive : null,
+    );
+  }
+
+  // Opens (attaching, via TerminalView's own mount effect) and activates a
+  // Terminal's tab. The only path that ever causes an attach.
+  function openTerminal(terminalId: string) {
+    setOpenedTerminalIds((prev) => (prev.includes(terminalId) ? prev : [...prev, terminalId]));
+    setActiveTerminalId(terminalId);
   }
 
   async function handleSelectProject(projectId: string) {
     setSelectedProjectId(projectId);
     setTerminals([]);
+    setOpenedTerminalIds([]);
     setActiveTerminalId(null);
-    await refreshTerminals(projectId, null);
+    await refreshTerminals(projectId);
   }
 
   async function handleCreateProject(name: string) {
@@ -56,21 +73,25 @@ function App() {
     setProjects(await listProjects());
     setSelectedProjectId(projectId);
     setTerminals([]);
+    setOpenedTerminalIds([]);
     setActiveTerminalId(null);
-    await refreshTerminals(projectId, null);
+    await refreshTerminals(projectId);
   }
 
   async function handleCreateTerminal(cwd: string, options: CreateTerminalOptions) {
     if (!selectedProjectId) return;
     const terminalId = await createTerminal(selectedProjectId, cwd, options);
     setLastCwd(cwd);
-    await refreshTerminals(selectedProjectId, terminalId);
+    await refreshTerminals(selectedProjectId);
+    // A freshly created Terminal shows immediately — this is the one
+    // exception to "opening is always explicit": the user just asked for it.
+    openTerminal(terminalId);
   }
 
   async function handleDeleteTerminal(terminalId: string) {
     if (!selectedProjectId) return;
     await deleteTerminal(terminalId);
-    await refreshTerminals(selectedProjectId, activeTerminalId);
+    await refreshTerminals(selectedProjectId);
   }
 
   async function handleDeleteProject(projectId: string) {
@@ -79,6 +100,7 @@ function App() {
     if (projectId === selectedProjectId) {
       setSelectedProjectId(null);
       setTerminals([]);
+      setOpenedTerminalIds([]);
       setActiveTerminalId(null);
     }
   }
@@ -99,20 +121,24 @@ function App() {
             <TerminalTabBar
               terminals={terminals}
               activeTerminalId={activeTerminalId}
-              onSelect={setActiveTerminalId}
+              onSelect={openTerminal}
               onDelete={handleDeleteTerminal}
             />
-            <div className="terminal-stack">
-              {terminals.map((terminal) => (
-                <div
-                  key={terminal.id}
-                  className="terminal-stack-item"
-                  style={{ display: terminal.id === activeTerminalId ? undefined : "none" }}
-                >
-                  <TerminalView terminalId={terminal.id} />
-                </div>
-              ))}
-            </div>
+            {openedTerminalIds.length === 0 ? (
+              <p>Select a tab to open it.</p>
+            ) : (
+              <div className="terminal-stack">
+                {openedTerminalIds.map((terminalId) => (
+                  <div
+                    key={terminalId}
+                    className="terminal-stack-item"
+                    style={{ display: terminalId === activeTerminalId ? undefined : "none" }}
+                  >
+                    <TerminalView terminalId={terminalId} />
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         ) : (
           <p>Select or create a project to get started.</p>

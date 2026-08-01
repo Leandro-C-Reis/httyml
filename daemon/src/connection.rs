@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use base64::engine::general_purpose::STANDARD;
@@ -12,30 +12,84 @@ use uuid::Uuid;
 use crate::framing::{read_frame, write_frame};
 use crate::project::Project;
 use crate::protocol::{ClientMessage, DaemonMessage, ProjectInfo, TerminalInfo};
+use crate::store;
 use crate::terminal::{TerminalConfig, TerminalHandle, DEFAULT_SCROLLBACK_LINES};
 
 /// Shared Daemon state: every Project and every Terminal, regardless of
 /// which connection created them.
 pub struct Registry {
+    config_path: PathBuf,
     projects: Mutex<HashMap<String, Project>>,
     terminals: Mutex<HashMap<String, Arc<TerminalHandle>>>,
 }
 
 impl Registry {
-    fn new() -> Arc<Self> {
+    /// Loads persisted Projects/Terminal configs from `config_path` (empty
+    /// if the file doesn't exist or fails to parse — see `store::load`).
+    /// Reloaded Terminals start `Parado`: whatever process they had is long
+    /// gone now that the Daemon itself restarted.
+    fn new(config_path: PathBuf) -> Arc<Self> {
+        let (loaded_projects, loaded_terminals) = store::load(&config_path);
+
+        let projects = loaded_projects
+            .into_iter()
+            .map(|p| (p.id.clone(), p))
+            .collect();
+        let terminals = loaded_terminals
+            .into_iter()
+            .map(|(id, config)| (id.clone(), TerminalHandle::reload(id, config)))
+            .collect();
+
         Arc::new(Self {
-            projects: Mutex::new(HashMap::new()),
-            terminals: Mutex::new(HashMap::new()),
+            config_path,
+            projects: Mutex::new(projects),
+            terminals: Mutex::new(terminals),
         })
+    }
+}
+
+/// Persists the current Projects/Terminal configs to disk. Failures are
+/// logged, not fatal — a persistence hiccup shouldn't take down an
+/// otherwise-healthy connection or in-memory state.
+///
+/// Called explicitly after each config-changing `handle_message` arm
+/// (`CreateProject`, `CreateTerminal`, `DeleteTerminal`, `DeleteProject`) —
+/// there's no structural guard for this, so a future message that changes
+/// persisted config (e.g. a rename/update) must remember to call it too.
+fn persist(registry: &Arc<Registry>) {
+    let projects: Vec<Project> = registry
+        .projects
+        .lock()
+        .unwrap()
+        .values()
+        .map(|p| Project {
+            id: p.id.clone(),
+            name: p.name.clone(),
+        })
+        .collect();
+    let terminals: Vec<(String, TerminalConfig)> = registry
+        .terminals
+        .lock()
+        .unwrap()
+        .values()
+        .map(|t| (t.id.clone(), t.config_snapshot()))
+        .collect();
+
+    if let Err(err) = store::save(&registry.config_path, &projects, &terminals) {
+        eprintln!(
+            "httyml-daemon: failed to persist config to {:?}: {err:#}",
+            registry.config_path
+        );
     }
 }
 
 type SharedWriter = Arc<AsyncMutex<OwnedWriteHalf>>;
 
-/// Binds the Unix socket at `socket_path` and serves client connections until
-/// the process is killed. Removes any stale socket file left over from a
+/// Binds the Unix socket at `socket_path` and serves client connections
+/// until the process is killed, loading (and persisting to) Project/Terminal
+/// config at `config_path`. Removes any stale socket file left over from a
 /// previous run before binding.
-pub async fn run(socket_path: &Path) -> anyhow::Result<()> {
+pub async fn run(socket_path: &Path, config_path: &Path) -> anyhow::Result<()> {
     if socket_path.exists() {
         std::fs::remove_file(socket_path)?;
     }
@@ -44,7 +98,7 @@ pub async fn run(socket_path: &Path) -> anyhow::Result<()> {
     }
 
     let listener = UnixListener::bind(socket_path)?;
-    let registry = Registry::new();
+    let registry = Registry::new(config_path.to_path_buf());
 
     loop {
         let (stream, _addr) = listener.accept().await?;
@@ -117,6 +171,7 @@ async fn handle_message(
                     name: name.clone(),
                 },
             );
+            persist(registry);
             send(
                 writer,
                 &DaemonMessage::ProjectCreated {
@@ -188,6 +243,7 @@ async fn handle_message(
                 .lock()
                 .unwrap()
                 .insert(id.clone(), handle);
+            persist(registry);
             send(writer, &DaemonMessage::Created { terminal_id: id }).await?;
         }
         ClientMessage::Attach { terminal_id } => {
@@ -297,6 +353,7 @@ async fn handle_message(
             if let Some(handle) = lookup(registry, &terminal_id) {
                 stop_and_forget(registry, &handle);
             }
+            persist(registry);
             send(writer, &DaemonMessage::TerminalDeleted { terminal_id }).await?;
         }
         ClientMessage::DeleteProject { project_id } => {
@@ -312,6 +369,7 @@ async fn handle_message(
                 stop_and_forget(registry, handle);
             }
             registry.projects.lock().unwrap().remove(&project_id);
+            persist(registry);
             send(writer, &DaemonMessage::ProjectDeleted { project_id }).await?;
         }
     }

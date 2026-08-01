@@ -72,10 +72,12 @@ struct LiveProcess {
     child: Box<dyn Child + Send>,
 }
 
-/// What a Terminal is created (and re-created, on restart) with. Bundled
-/// into one struct because `TerminalHandle::spawn`'s parameter list was
-/// already at five and only grows as more config becomes configurable
-/// (ticket 05 adds env vars, shell, and a scrollback override here).
+/// What a Terminal is created (and re-created, on restart or reload) with.
+/// Bundled into one struct because `TerminalHandle::spawn`'s parameter list
+/// was already at five and only grows as more config becomes configurable
+/// (ticket 05 adds env vars, shell, and a scrollback override here). Also
+/// what gets persisted to disk — see `crate::store`.
+#[derive(Debug, Clone)]
 pub struct TerminalConfig {
     pub project_id: String,
     pub cwd: String,
@@ -101,6 +103,7 @@ pub struct TerminalHandle {
     startup_command: Option<String>,
     env_vars: HashMap<String, String>,
     shell: Option<String>,
+    scrollback_lines: usize,
     /// Serializes `stop`, `restart`, and `handle_process_exit` against each
     /// other so none of the three can act on a `process`/`state` pair that
     /// another one is concurrently changing.
@@ -116,7 +119,11 @@ pub struct TerminalHandle {
 }
 
 impl TerminalHandle {
-    pub fn spawn(id: String, config: TerminalConfig) -> anyhow::Result<Arc<TerminalHandle>> {
+    /// Builds a Terminal from config without starting a process — always
+    /// `Parado` until `start_process` runs. Shared by `spawn` (which starts
+    /// immediately, for quick-create) and `reload` (which doesn't, since a
+    /// reloaded Terminal's previous process is long gone).
+    fn build(id: String, config: TerminalConfig) -> Arc<TerminalHandle> {
         let TerminalConfig {
             project_id,
             cwd,
@@ -130,7 +137,7 @@ impl TerminalHandle {
         let (tx, _rx) = broadcast::channel(1024);
         let (state_tx, _rx) = broadcast::channel(16);
 
-        let handle = Arc::new(TerminalHandle {
+        Arc::new(TerminalHandle {
             id,
             project_id,
             name,
@@ -138,6 +145,7 @@ impl TerminalHandle {
             startup_command,
             env_vars,
             shell,
+            scrollback_lines,
             lifecycle: Mutex::new(()),
             generation: AtomicU64::new(0),
             process: Mutex::new(None),
@@ -145,14 +153,39 @@ impl TerminalHandle {
             scrollback,
             tx,
             state_tx,
-        });
+        })
+    }
 
+    pub fn spawn(id: String, config: TerminalConfig) -> anyhow::Result<Arc<TerminalHandle>> {
+        let handle = Self::build(id, config);
         handle.start_process()?;
         Ok(handle)
     }
 
+    /// Reconstructs a Terminal from persisted config on Daemon startup,
+    /// without starting a process — whatever ran before is gone now that
+    /// the Daemon itself restarted. Starts `Parado`; `restart()` spawns a
+    /// fresh process reusing this same config, same as restarting a
+    /// Terminal the user stopped themselves.
+    pub fn reload(id: String, config: TerminalConfig) -> Arc<TerminalHandle> {
+        Self::build(id, config)
+    }
+
     pub fn state(&self) -> TerminalState {
         *self.state.lock().unwrap()
+    }
+
+    /// Snapshots this Terminal's current config, e.g. to persist to disk.
+    pub fn config_snapshot(&self) -> TerminalConfig {
+        TerminalConfig {
+            project_id: self.project_id.clone(),
+            cwd: self.cwd.clone(),
+            name: self.name.clone(),
+            startup_command: self.startup_command.clone(),
+            env_vars: self.env_vars.clone(),
+            shell: self.shell.clone(),
+            scrollback_lines: self.scrollback_lines,
+        }
     }
 
     /// Snapshots the scrollback, current state, and subscribes to both live
