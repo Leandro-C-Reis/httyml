@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { TerminalView } from "./TerminalView";
 import * as daemon from "../lib/daemon";
 
@@ -43,6 +44,8 @@ vi.mock("../lib/daemon", async () => {
     onTerminalOutput: vi.fn().mockResolvedValue(vi.fn()),
     writeTerminal: vi.fn().mockResolvedValue(undefined),
     resizeTerminal: vi.fn().mockResolvedValue(undefined),
+    stopTerminal: vi.fn().mockResolvedValue(undefined),
+    restartTerminal: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -83,5 +86,32 @@ describe("TerminalView", () => {
     onDataCallback("ls -la\n");
 
     expect(daemon.writeTerminal).toHaveBeenCalledWith("abc123", "ls -la\n");
+  });
+
+  it("shows a running indicator and a stop action for a rodando Terminal", async () => {
+    render(<TerminalView terminalId="abc123" />);
+    await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());
+
+    expect(screen.getByTestId("terminal-status")).toHaveTextContent(/rodando/i);
+    const stopButton = screen.getByRole("button", { name: /stop/i });
+
+    await userEvent.click(stopButton);
+    expect(daemon.stopTerminal).toHaveBeenCalledWith("abc123");
+  });
+
+  it("switches to a parado indicator and a restart action once the terminal is parado", async () => {
+    render(<TerminalView terminalId="abc123" />);
+    await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());
+    const handleMessage = vi.mocked(daemon.onTerminalOutput).mock.calls[0][1];
+
+    act(() => {
+      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Parado" });
+    });
+
+    expect(screen.getByTestId("terminal-status")).toHaveTextContent(/parado/i);
+    const restartButton = screen.getByRole("button", { name: /restart/i });
+
+    await userEvent.click(restartButton);
+    expect(daemon.restartTerminal).toHaveBeenCalledWith("abc123");
   });
 });

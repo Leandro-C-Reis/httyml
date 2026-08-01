@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::terminal::TerminalState;
+
 /// Messages the app sends to the Daemon over the Unix socket.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -22,6 +24,12 @@ pub enum ClientMessage {
         rows: u16,
         cols: u16,
     },
+    Stop {
+        terminal_id: String,
+    },
+    Restart {
+        terminal_id: String,
+    },
 }
 
 /// Messages the Daemon sends back to the app over the same connection.
@@ -42,6 +50,12 @@ pub enum DaemonMessage {
         terminal_id: String,
         /// base64-encoded bytes
         data: String,
+    },
+    /// Sent once right after Attach with the current state, then again
+    /// every time it changes (stop, restart, ...).
+    StateChanged {
+        terminal_id: String,
+        state: TerminalState,
     },
     Error {
         message: String,

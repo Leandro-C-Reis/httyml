@@ -179,6 +179,30 @@ async fn resize_terminal(
         .await
 }
 
+#[tauri::command]
+async fn stop_terminal(
+    state: State<'_, AttachedTerminals>,
+    terminal_id: String,
+) -> Result<(), String> {
+    state
+        .send(terminal_id, |terminal_id| ClientMessage::Stop {
+            terminal_id,
+        })
+        .await
+}
+
+#[tauri::command]
+async fn restart_terminal(
+    state: State<'_, AttachedTerminals>,
+    terminal_id: String,
+) -> Result<(), String> {
+    state
+        .send(terminal_id, |terminal_id| ClientMessage::Restart {
+            terminal_id,
+        })
+        .await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -192,7 +216,9 @@ pub fn run() {
             create_terminal,
             attach_terminal,
             write_terminal,
-            resize_terminal
+            resize_terminal,
+            stop_terminal,
+            restart_terminal
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

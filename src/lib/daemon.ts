@@ -1,10 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+export type TerminalState = "Rodando" | "Parado";
+
 export type DaemonMessage =
   | { type: "Created"; terminal_id: string }
   | { type: "Scrollback"; terminal_id: string; data: string }
   | { type: "Output"; terminal_id: string; data: string }
+  | { type: "StateChanged"; terminal_id: string; state: TerminalState }
   | { type: "Error"; message: string };
 
 export async function ensureDaemon(): Promise<void> {
@@ -37,6 +40,14 @@ export async function resizeTerminal(
   cols: number,
 ): Promise<void> {
   await invoke("resize_terminal", { terminalId, rows, cols });
+}
+
+export async function stopTerminal(terminalId: string): Promise<void> {
+  await invoke("stop_terminal", { terminalId });
+}
+
+export async function restartTerminal(terminalId: string): Promise<void> {
+  await invoke("restart_terminal", { terminalId });
 }
 
 export function onTerminalOutput(

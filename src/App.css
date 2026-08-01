@@ -1,6 +1,7 @@
 :root {
   --nb-primary: #fdc800;
   --nb-secondary: #432dd7;
+  --nb-success: #16a34a;
   --nb-danger: #dc2626;
   --nb-surface: #fbfbf9;
   --nb-text: #1c293c;
@@ -94,6 +95,49 @@ button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
   box-shadow: none;
+}
+
+.button--danger {
+  background-color: var(--nb-danger);
+  color: #fff;
+}
+
+.button--success {
+  background-color: var(--nb-success);
+  color: #fff;
+}
+
+.terminal-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.terminal-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.terminal-status {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border: var(--nb-border);
+  border-radius: 4px;
+  color: #fff;
+}
+
+.terminal-status--rodando {
+  background-color: var(--nb-success);
+}
+
+.terminal-status--parado {
+  background-color: var(--nb-danger);
 }
 
 .terminal-view {

@@ -4,6 +4,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use httyml_daemon::framing::{read_frame, write_frame};
 use httyml_daemon::protocol::{ClientMessage, DaemonMessage};
+use httyml_daemon::terminal::TerminalState;
 use tokio::net::UnixStream;
 use tokio::time::timeout;
 
@@ -58,6 +59,55 @@ impl TestClient {
                 if collected.contains(needle) {
                     return collected;
                 }
+            }
+        }
+    }
+
+    /// Keep receiving frames until a StateChanged matching `expected` arrives.
+    async fn expect_state(&mut self, expected: TerminalState) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                panic!("timed out waiting for state {expected:?}");
+            }
+            let frame = timeout(remaining, read_frame(&mut self.stream))
+                .await
+                .unwrap_or_else(|_| panic!("timed out waiting for state {expected:?}"))
+                .unwrap();
+            let msg: DaemonMessage = serde_json::from_slice(&frame).unwrap();
+            if let DaemonMessage::StateChanged { state, .. } = msg {
+                if state == expected {
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Asserts no further frame arrives within `duration`.
+    async fn expect_silence(&mut self, duration: Duration) {
+        let result = timeout(duration, read_frame(&mut self.stream)).await;
+        assert!(
+            result.is_err(),
+            "expected no further frames for {duration:?}, but one arrived"
+        );
+    }
+
+    /// Reads and discards any frames that arrive within `duration`, without
+    /// asserting anything. Used to absorb output a killed process had
+    /// already flushed to the PTY before the kill signal took effect.
+    async fn drain_briefly(&mut self, duration: Duration) {
+        let deadline = tokio::time::Instant::now() + duration;
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                return;
+            }
+            if timeout(remaining, read_frame(&mut self.stream))
+                .await
+                .is_err()
+            {
+                return;
             }
         }
     }
@@ -198,4 +248,170 @@ async fn resize_changes_the_pty_size_seen_by_the_shell() {
         .await;
 
     client.expect_output_containing("40 120").await;
+}
+
+#[tokio::test]
+async fn stop_kills_the_process_and_marks_it_parado() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    client
+        .send(&ClientMessage::CreateTerminal {
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: Some("while true; do echo tick; sleep 0.05; done".to_string()),
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+    client.expect_state(TerminalState::Rodando).await;
+
+    // Confirm the loop is actually producing output before stopping it.
+    client.expect_output_containing("tick").await;
+
+    client
+        .send(&ClientMessage::Stop {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_state(TerminalState::Parado).await;
+
+    // The kill signal doesn't retroactively erase a tick the loop had
+    // already flushed to the PTY microseconds earlier — absorb that one
+    // straggler, then confirm the loop itself is truly dead, not just quiet.
+    client.drain_briefly(Duration::from_millis(150)).await;
+    client.expect_silence(Duration::from_millis(300)).await;
+}
+
+#[tokio::test]
+async fn restart_spawns_a_fresh_process_using_the_stored_config() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    client
+        .send(&ClientMessage::CreateTerminal {
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: Some("echo restart-marker".to_string()),
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+    client.expect_state(TerminalState::Rodando).await;
+    client.expect_output_containing("restart-marker").await;
+
+    client
+        .send(&ClientMessage::Stop {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_state(TerminalState::Parado).await;
+
+    client
+        .send(&ClientMessage::Restart {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_state(TerminalState::Rodando).await;
+
+    // The startup command ran again on the fresh process — same stored config.
+    client.expect_output_containing("restart-marker").await;
+}
+
+#[tokio::test]
+async fn config_survives_stop_independently_of_restart_reuse() {
+    let (_socket_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    // A dedicated cwd (distinct from the shared "/tmp" other tests use) so
+    // matching this exact path in output can't be a coincidence.
+    let cwd_dir = tempfile::tempdir().unwrap();
+    let expected_cwd = std::fs::canonicalize(cwd_dir.path())
+        .unwrap()
+        .display()
+        .to_string();
+
+    let mut client = TestClient::connect(&socket_path).await;
+    client
+        .send(&ClientMessage::CreateTerminal {
+            cwd: cwd_dir.path().display().to_string(),
+            name: Some("my-terminal".to_string()),
+            startup_command: None,
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+    client.expect_state(TerminalState::Rodando).await;
+
+    client
+        .send(&ClientMessage::Write {
+            terminal_id: terminal_id.clone(),
+            data: STANDARD.encode("pwd\n"),
+        })
+        .await;
+    client.expect_output_containing(&expected_cwd).await;
+
+    client
+        .send(&ClientMessage::Stop {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_state(TerminalState::Parado).await;
+
+    // Nothing so far proves the *config* (as opposed to just the dead
+    // process) survived — restart on a process reusing `cwd` is the only
+    // way this protocol exposes that, so check it independently of the
+    // startup_command-reuse assertion the other restart test makes.
+    client
+        .send(&ClientMessage::Restart {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_state(TerminalState::Rodando).await;
+
+    client
+        .send(&ClientMessage::Write {
+            terminal_id,
+            data: STANDARD.encode("pwd\n"),
+        })
+        .await;
+    client.expect_output_containing(&expected_cwd).await;
 }

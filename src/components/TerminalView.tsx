@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -7,8 +7,11 @@ import {
   decodeBase64,
   onTerminalOutput,
   resizeTerminal,
+  restartTerminal,
+  stopTerminal,
   writeTerminal,
   type DaemonMessage,
+  type TerminalState,
 } from "../lib/daemon";
 
 type TerminalViewProps = {
@@ -17,6 +20,7 @@ type TerminalViewProps = {
 
 export function TerminalView({ terminalId }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [state, setState] = useState<TerminalState>("Rodando");
 
   useEffect(() => {
     const term = new Terminal();
@@ -31,6 +35,8 @@ export function TerminalView({ terminalId }: TerminalViewProps) {
     const handleMessage = (msg: DaemonMessage) => {
       if (msg.type === "Scrollback" || msg.type === "Output") {
         term.write(decodeBase64(msg.data));
+      } else if (msg.type === "StateChanged") {
+        setState(msg.state);
       }
     };
 
@@ -61,5 +67,36 @@ export function TerminalView({ terminalId }: TerminalViewProps) {
     };
   }, [terminalId]);
 
-  return <div className="terminal-view" data-testid="terminal-view" ref={containerRef} />;
+  const isRunning = state === "Rodando";
+
+  return (
+    <div className="terminal-panel">
+      <div className="terminal-toolbar">
+        <span
+          className={`terminal-status terminal-status--${isRunning ? "rodando" : "parado"}`}
+          data-testid="terminal-status"
+        >
+          {isRunning ? "rodando" : "parado"}
+        </span>
+        {isRunning ? (
+          <button
+            type="button"
+            className="button--danger"
+            onClick={() => void stopTerminal(terminalId)}
+          >
+            Stop
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="button--success"
+            onClick={() => void restartTerminal(terminalId)}
+          >
+            Restart
+          </button>
+        )}
+      </div>
+      <div className="terminal-view" data-testid="terminal-view" ref={containerRef} />
+    </div>
+  );
 }

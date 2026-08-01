@@ -45,6 +45,15 @@ fn lookup(registry: &Registry, terminal_id: &str) -> Option<Arc<TerminalHandle>>
     registry.lock().unwrap().get(terminal_id).cloned()
 }
 
+/// Logs a fire-and-forget command's failure (e.g. writing to a `Parado`
+/// Terminal) instead of silently dropping it — these commands have no
+/// response in the protocol, so this is the only visibility into failures.
+fn log_err(result: anyhow::Result<()>) {
+    if let Err(err) = result {
+        eprintln!("httyml-daemon: {err:#}");
+    }
+}
+
 async fn handle_connection(stream: UnixStream, registry: Registry) -> anyhow::Result<()> {
     let (mut read_half, write_half) = stream.into_split();
     let writer: SharedWriter = Arc::new(AsyncMutex::new(write_half));
@@ -103,7 +112,7 @@ async fn handle_message(
 
             // Snapshot and subscribe atomically so no chunk the reader thread
             // produces around this moment is lost (a gap) or shown twice.
-            let (snapshot, mut rx) = handle.snapshot_and_subscribe();
+            let (snapshot, state, mut output_rx, mut state_rx) = handle.snapshot_and_subscribe();
             send(
                 writer,
                 &DaemonMessage::Scrollback {
@@ -112,24 +121,49 @@ async fn handle_message(
                 },
             )
             .await?;
+            send(
+                writer,
+                &DaemonMessage::StateChanged {
+                    terminal_id: terminal_id.clone(),
+                    state,
+                },
+            )
+            .await?;
 
             let writer = writer.clone();
             tokio::spawn(async move {
-                while let Ok(chunk) = rx.recv().await {
-                    let msg = DaemonMessage::Output {
-                        terminal_id: terminal_id.clone(),
-                        data: STANDARD.encode(chunk),
-                    };
-                    if send(&writer, &msg).await.is_err() {
-                        break;
+                loop {
+                    tokio::select! {
+                        chunk = output_rx.recv() => {
+                            let Ok(chunk) = chunk else { break };
+                            let msg = DaemonMessage::Output {
+                                terminal_id: terminal_id.clone(),
+                                data: STANDARD.encode(chunk),
+                            };
+                            if send(&writer, &msg).await.is_err() {
+                                break;
+                            }
+                        }
+                        state = state_rx.recv() => {
+                            let Ok(state) = state else { break };
+                            let msg = DaemonMessage::StateChanged {
+                                terminal_id: terminal_id.clone(),
+                                state,
+                            };
+                            if send(&writer, &msg).await.is_err() {
+                                break;
+                            }
+                        }
                     }
                 }
             });
         }
         ClientMessage::Write { terminal_id, data } => {
             if let Some(handle) = lookup(registry, &terminal_id) {
-                let bytes = STANDARD.decode(data)?;
-                handle.write_input(&bytes)?;
+                match STANDARD.decode(data) {
+                    Ok(bytes) => log_err(handle.write_input(&bytes)),
+                    Err(err) => eprintln!("httyml-daemon: invalid Write payload: {err:#}"),
+                }
             }
         }
         ClientMessage::Resize {
@@ -138,7 +172,17 @@ async fn handle_message(
             cols,
         } => {
             if let Some(handle) = lookup(registry, &terminal_id) {
-                handle.resize(rows, cols)?;
+                log_err(handle.resize(rows, cols));
+            }
+        }
+        ClientMessage::Stop { terminal_id } => {
+            if let Some(handle) = lookup(registry, &terminal_id) {
+                log_err(handle.stop());
+            }
+        }
+        ClientMessage::Restart { terminal_id } => {
+            if let Some(handle) = lookup(registry, &terminal_id) {
+                log_err(handle.restart());
             }
         }
     }
