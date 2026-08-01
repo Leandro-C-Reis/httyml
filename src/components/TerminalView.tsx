@@ -8,7 +8,7 @@ import {
   onTerminalOutput,
   resizeTerminal,
   writeTerminal,
-  type ServerMessage,
+  type DaemonMessage,
 } from "../lib/daemon";
 
 type TerminalViewProps = {
@@ -28,7 +28,7 @@ export function TerminalView({ terminalId }: TerminalViewProps) {
       fitAddon.fit();
     }
 
-    const handleMessage = (msg: ServerMessage) => {
+    const handleMessage = (msg: DaemonMessage) => {
       if (msg.type === "Scrollback" || msg.type === "Output") {
         term.write(decodeBase64(msg.data));
       }

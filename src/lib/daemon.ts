@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-export type ServerMessage =
+export type DaemonMessage =
   | { type: "Created"; terminal_id: string }
   | { type: "Scrollback"; terminal_id: string; data: string }
   | { type: "Output"; terminal_id: string; data: string }
@@ -41,9 +41,9 @@ export async function resizeTerminal(
 
 export function onTerminalOutput(
   terminalId: string,
-  callback: (msg: ServerMessage) => void,
+  callback: (msg: DaemonMessage) => void,
 ): Promise<UnlistenFn> {
-  return listen<ServerMessage>(`terminal-output-${terminalId}`, (event) => {
+  return listen<DaemonMessage>(`terminal-output-${terminalId}`, (event) => {
     callback(event.payload);
   });
 }
