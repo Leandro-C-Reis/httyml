@@ -15,7 +15,7 @@ struct TestClient {
 impl TestClient {
     async fn connect(socket_path: &std::path::Path) -> Self {
         // The daemon is started concurrently; retry until the socket exists.
-        for _ in 0..20 {
+        for _ in 0..100 {
             if let Ok(stream) = UnixStream::connect(socket_path).await {
                 return Self { stream };
             }
@@ -27,6 +27,17 @@ impl TestClient {
     async fn send(&mut self, msg: &ClientMessage) {
         let payload = serde_json::to_vec(msg).unwrap();
         write_frame(&mut self.stream, &payload).await.unwrap();
+    }
+
+    async fn create_project(&mut self, name: &str) -> String {
+        self.send(&ClientMessage::CreateProject {
+            name: name.to_string(),
+        })
+        .await;
+        match self.recv().await {
+            DaemonMessage::ProjectCreated { project_id, .. } => project_id,
+            other => panic!("expected ProjectCreated, got {other:?}"),
+        }
     }
 
     async fn recv(&mut self) -> DaemonMessage {
@@ -131,8 +142,10 @@ async fn quick_create_starts_a_live_shell_immediately() {
     spawn_daemon(socket_path.clone());
 
     let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
     client
         .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: None,
@@ -171,8 +184,10 @@ async fn attach_replays_buffered_scrollback() {
     spawn_daemon(socket_path.clone());
 
     let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
     client
         .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: Some("echo scrollback-marker".to_string()),
@@ -208,8 +223,10 @@ async fn resize_changes_the_pty_size_seen_by_the_shell() {
     spawn_daemon(socket_path.clone());
 
     let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
     client
         .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: None,
@@ -256,8 +273,10 @@ async fn stop_kills_the_process_and_marks_it_parado() {
     spawn_daemon(socket_path.clone());
 
     let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
     client
         .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: Some("while true; do echo tick; sleep 0.05; done".to_string()),
@@ -302,8 +321,10 @@ async fn restart_spawns_a_fresh_process_using_the_stored_config() {
     spawn_daemon(socket_path.clone());
 
     let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
     client
         .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: Some("echo restart-marker".to_string()),
@@ -358,8 +379,10 @@ async fn config_survives_stop_independently_of_restart_reuse() {
         .to_string();
 
     let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
     client
         .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
             cwd: cwd_dir.path().display().to_string(),
             name: Some("my-terminal".to_string()),
             startup_command: None,
@@ -422,8 +445,10 @@ async fn process_exiting_on_its_own_transitions_to_encerrado_with_exit_code() {
     spawn_daemon(socket_path.clone());
 
     let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
     client
         .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: Some("echo before-exit; exit 7".to_string()),
@@ -456,8 +481,10 @@ async fn scrollback_remains_attachable_after_the_process_exits_on_its_own() {
     spawn_daemon(socket_path.clone());
 
     let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
     client
         .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: Some("echo exit-scrollback-marker; exit 3".to_string()),
@@ -497,8 +524,10 @@ async fn restart_works_from_encerrado_same_as_from_parado() {
     spawn_daemon(socket_path.clone());
 
     let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
     client
         .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: Some("echo encerrado-restart-marker; exit 1".to_string()),
@@ -551,8 +580,10 @@ async fn rapid_stop_restart_cycles_never_corrupt_a_later_process() {
     spawn_daemon(socket_path.clone());
 
     let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
     client
         .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: None,
@@ -619,4 +650,101 @@ async fn rapid_stop_restart_cycles_never_corrupt_a_later_process() {
         })
         .await;
     client.expect_state(TerminalState::Rodando).await;
+}
+
+#[tokio::test]
+async fn create_project_and_list_it() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("httyml").await;
+
+    client.send(&ClientMessage::ListProjects).await;
+    let projects = match client.recv().await {
+        DaemonMessage::Projects { projects } => projects,
+        other => panic!("expected Projects, got {other:?}"),
+    };
+
+    assert_eq!(projects.len(), 1);
+    assert_eq!(projects[0].id, project_id);
+    assert_eq!(projects[0].name, "httyml");
+}
+
+#[tokio::test]
+async fn list_projects_returns_every_created_project() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let first = client.create_project("first-project").await;
+    let second = client.create_project("second-project").await;
+
+    client.send(&ClientMessage::ListProjects).await;
+    let mut projects = match client.recv().await {
+        DaemonMessage::Projects { projects } => projects,
+        other => panic!("expected Projects, got {other:?}"),
+    };
+    projects.sort_by(|a, b| a.name.cmp(&b.name));
+
+    assert_eq!(projects.len(), 2);
+    assert_eq!(projects[0].id, first);
+    assert_eq!(projects[0].name, "first-project");
+    assert_eq!(projects[1].id, second);
+    assert_eq!(projects[1].name, "second-project");
+}
+
+#[tokio::test]
+async fn list_terminals_is_scoped_to_its_project() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_a = client.create_project("project-a").await;
+    let project_b = client.create_project("project-b").await;
+
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id: project_a.clone(),
+            cwd: "/tmp".to_string(),
+            name: Some("in-a".to_string()),
+            startup_command: None,
+        })
+        .await;
+    let terminal_a = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id: project_b.clone(),
+            cwd: "/tmp".to_string(),
+            name: Some("in-b".to_string()),
+            startup_command: None,
+        })
+        .await;
+    let terminal_b = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::ListTerminals {
+            project_id: project_a.clone(),
+        })
+        .await;
+    let (returned_project, terminals_in_a) = match client.recv().await {
+        DaemonMessage::Terminals {
+            project_id,
+            terminals,
+        } => (project_id, terminals),
+        other => panic!("expected Terminals, got {other:?}"),
+    };
+
+    assert_eq!(returned_project, project_a);
+    assert_eq!(terminals_in_a.len(), 1);
+    assert_eq!(terminals_in_a[0].id, terminal_a);
+    assert_eq!(terminals_in_a[0].name.as_deref(), Some("in-a"));
+    assert!(terminals_in_a.iter().all(|t| t.id != terminal_b));
 }

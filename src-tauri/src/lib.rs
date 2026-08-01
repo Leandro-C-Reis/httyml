@@ -5,7 +5,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use httyml_daemon::default_socket_path;
 use httyml_daemon::framing::{read_frame, write_frame};
-use httyml_daemon::protocol::{ClientMessage, DaemonMessage};
+use httyml_daemon::protocol::{ClientMessage, DaemonMessage, ProjectInfo, TerminalInfo};
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_shell::ShellExt;
 use tokio::net::UnixStream;
@@ -73,12 +73,41 @@ async fn ensure_daemon(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn create_project(name: String) -> Result<String, String> {
+    match send_one(ClientMessage::CreateProject { name }).await? {
+        DaemonMessage::ProjectCreated { project_id, .. } => Ok(project_id),
+        DaemonMessage::Error { message } => Err(message),
+        _ => Err("unexpected response from daemon".to_string()),
+    }
+}
+
+#[tauri::command]
+async fn list_projects() -> Result<Vec<ProjectInfo>, String> {
+    match send_one(ClientMessage::ListProjects).await? {
+        DaemonMessage::Projects { projects } => Ok(projects),
+        DaemonMessage::Error { message } => Err(message),
+        _ => Err("unexpected response from daemon".to_string()),
+    }
+}
+
+#[tauri::command]
+async fn list_terminals(project_id: String) -> Result<Vec<TerminalInfo>, String> {
+    match send_one(ClientMessage::ListTerminals { project_id }).await? {
+        DaemonMessage::Terminals { terminals, .. } => Ok(terminals),
+        DaemonMessage::Error { message } => Err(message),
+        _ => Err("unexpected response from daemon".to_string()),
+    }
+}
+
+#[tauri::command]
 async fn create_terminal(
+    project_id: String,
     cwd: String,
     name: Option<String>,
     startup_command: Option<String>,
 ) -> Result<String, String> {
     match send_one(ClientMessage::CreateTerminal {
+        project_id,
         cwd,
         name,
         startup_command,
@@ -213,6 +242,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ensure_daemon,
+            create_project,
+            list_projects,
+            list_terminals,
             create_terminal,
             attach_terminal,
             write_terminal,

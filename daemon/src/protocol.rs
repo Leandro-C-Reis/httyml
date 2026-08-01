@@ -6,7 +6,15 @@ use crate::terminal::TerminalState;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ClientMessage {
+    CreateProject {
+        name: String,
+    },
+    ListProjects,
+    ListTerminals {
+        project_id: String,
+    },
     CreateTerminal {
+        project_id: String,
         cwd: String,
         name: Option<String>,
         startup_command: Option<String>,
@@ -32,10 +40,36 @@ pub enum ClientMessage {
     },
 }
 
+/// A Project as listed to the app — just an id and a name.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectInfo {
+    pub id: String,
+    pub name: String,
+}
+
+/// A Terminal as listed to the app, scoped to a Project.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TerminalInfo {
+    pub id: String,
+    pub name: Option<String>,
+    pub state: TerminalState,
+}
+
 /// Messages the Daemon sends back to the app over the same connection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum DaemonMessage {
+    ProjectCreated {
+        project_id: String,
+        name: String,
+    },
+    Projects {
+        projects: Vec<ProjectInfo>,
+    },
+    Terminals {
+        project_id: String,
+        terminals: Vec<TerminalInfo>,
+    },
     Created {
         terminal_id: String,
     },

@@ -1,5 +1,6 @@
 pub mod connection;
 pub mod framing;
+pub mod project;
 pub mod protocol;
 pub mod terminal;
 

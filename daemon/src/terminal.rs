@@ -72,12 +72,25 @@ struct LiveProcess {
     child: Box<dyn Child + Send>,
 }
 
+/// What a Terminal is created (and re-created, on restart) with. Bundled
+/// into one struct because `TerminalHandle::spawn`'s parameter list was
+/// already at five and only grows as more config becomes configurable
+/// (ticket 05 adds env vars, shell, and a scrollback override here).
+pub struct TerminalConfig {
+    pub project_id: String,
+    pub cwd: String,
+    pub name: Option<String>,
+    pub startup_command: Option<String>,
+    pub scrollback_lines: usize,
+}
+
 /// A PTY-backed Terminal, owned by the Daemon. Its identity (`id`, `cwd`,
 /// `scrollback`, `tx`) outlives any single process: stopping kills the
 /// process but keeps the config and history; restarting spawns a fresh
 /// process reusing that same config.
 pub struct TerminalHandle {
     pub id: String,
+    pub project_id: String,
     pub name: Option<String>,
     pub cwd: String,
     startup_command: Option<String>,
@@ -96,19 +109,21 @@ pub struct TerminalHandle {
 }
 
 impl TerminalHandle {
-    pub fn spawn(
-        id: String,
-        cwd: String,
-        name: Option<String>,
-        startup_command: Option<String>,
-        scrollback_lines: usize,
-    ) -> anyhow::Result<Arc<TerminalHandle>> {
+    pub fn spawn(id: String, config: TerminalConfig) -> anyhow::Result<Arc<TerminalHandle>> {
+        let TerminalConfig {
+            project_id,
+            cwd,
+            name,
+            startup_command,
+            scrollback_lines,
+        } = config;
         let scrollback = Arc::new(Mutex::new(Scrollback::new(scrollback_lines)));
         let (tx, _rx) = broadcast::channel(1024);
         let (state_tx, _rx) = broadcast::channel(16);
 
         let handle = Arc::new(TerminalHandle {
             id,
+            project_id,
             name,
             cwd,
             startup_command,

@@ -3,6 +3,9 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type TerminalState = "Rodando" | "Parado" | { Encerrado: { exit_code: number } };
 
+export type ProjectInfo = { id: string; name: string };
+export type TerminalInfo = { id: string; name: string | null; state: TerminalState };
+
 export type DaemonMessage =
   | { type: "Created"; terminal_id: string }
   | { type: "Scrollback"; terminal_id: string; data: string }
@@ -14,12 +17,26 @@ export async function ensureDaemon(): Promise<void> {
   await invoke("ensure_daemon");
 }
 
+export async function createProject(name: string): Promise<string> {
+  return invoke<string>("create_project", { name });
+}
+
+export async function listProjects(): Promise<ProjectInfo[]> {
+  return invoke<ProjectInfo[]>("list_projects");
+}
+
+export async function listTerminals(projectId: string): Promise<TerminalInfo[]> {
+  return invoke<TerminalInfo[]>("list_terminals", { projectId });
+}
+
 export async function createTerminal(
+  projectId: string,
   cwd: string,
   name?: string,
   startupCommand?: string,
 ): Promise<string> {
   return invoke<string>("create_terminal", {
+    projectId,
     cwd,
     name: name || null,
     startupCommand: startupCommand || null,

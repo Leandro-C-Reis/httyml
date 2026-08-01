@@ -10,10 +10,26 @@ use tokio::sync::Mutex as AsyncMutex;
 use uuid::Uuid;
 
 use crate::framing::{read_frame, write_frame};
-use crate::protocol::{ClientMessage, DaemonMessage};
-use crate::terminal::{TerminalHandle, DEFAULT_SCROLLBACK_LINES};
+use crate::project::Project;
+use crate::protocol::{ClientMessage, DaemonMessage, ProjectInfo, TerminalInfo};
+use crate::terminal::{TerminalConfig, TerminalHandle, DEFAULT_SCROLLBACK_LINES};
 
-pub type Registry = Arc<Mutex<HashMap<String, Arc<TerminalHandle>>>>;
+/// Shared Daemon state: every Project and every Terminal, regardless of
+/// which connection created them.
+pub struct Registry {
+    projects: Mutex<HashMap<String, Project>>,
+    terminals: Mutex<HashMap<String, Arc<TerminalHandle>>>,
+}
+
+impl Registry {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            projects: Mutex::new(HashMap::new()),
+            terminals: Mutex::new(HashMap::new()),
+        })
+    }
+}
+
 type SharedWriter = Arc<AsyncMutex<OwnedWriteHalf>>;
 
 /// Binds the Unix socket at `socket_path` and serves client connections until
@@ -28,7 +44,7 @@ pub async fn run(socket_path: &Path) -> anyhow::Result<()> {
     }
 
     let listener = UnixListener::bind(socket_path)?;
-    let registry: Registry = Arc::new(Mutex::new(HashMap::new()));
+    let registry = Registry::new();
 
     loop {
         let (stream, _addr) = listener.accept().await?;
@@ -41,8 +57,8 @@ pub async fn run(socket_path: &Path) -> anyhow::Result<()> {
     }
 }
 
-fn lookup(registry: &Registry, terminal_id: &str) -> Option<Arc<TerminalHandle>> {
-    registry.lock().unwrap().get(terminal_id).cloned()
+fn lookup(registry: &Arc<Registry>, terminal_id: &str) -> Option<Arc<TerminalHandle>> {
+    registry.terminals.lock().unwrap().get(terminal_id).cloned()
 }
 
 /// Logs a fire-and-forget command's failure (e.g. writing to a `Parado`
@@ -54,7 +70,7 @@ fn log_err(result: anyhow::Result<()>) {
     }
 }
 
-async fn handle_connection(stream: UnixStream, registry: Registry) -> anyhow::Result<()> {
+async fn handle_connection(stream: UnixStream, registry: Arc<Registry>) -> anyhow::Result<()> {
     let (mut read_half, write_half) = stream.into_split();
     let writer: SharedWriter = Arc::new(AsyncMutex::new(write_half));
 
@@ -78,11 +94,65 @@ async fn send(writer: &SharedWriter, msg: &DaemonMessage) -> anyhow::Result<()> 
 
 async fn handle_message(
     msg: ClientMessage,
-    registry: &Registry,
+    registry: &Arc<Registry>,
     writer: &SharedWriter,
 ) -> anyhow::Result<()> {
     match msg {
+        ClientMessage::CreateProject { name } => {
+            let id = Uuid::new_v4().to_string();
+            registry.projects.lock().unwrap().insert(
+                id.clone(),
+                Project {
+                    id: id.clone(),
+                    name: name.clone(),
+                },
+            );
+            send(
+                writer,
+                &DaemonMessage::ProjectCreated {
+                    project_id: id,
+                    name,
+                },
+            )
+            .await?;
+        }
+        ClientMessage::ListProjects => {
+            let projects = registry
+                .projects
+                .lock()
+                .unwrap()
+                .values()
+                .map(|p| ProjectInfo {
+                    id: p.id.clone(),
+                    name: p.name.clone(),
+                })
+                .collect();
+            send(writer, &DaemonMessage::Projects { projects }).await?;
+        }
+        ClientMessage::ListTerminals { project_id } => {
+            let terminals = registry
+                .terminals
+                .lock()
+                .unwrap()
+                .values()
+                .filter(|t| t.project_id == project_id)
+                .map(|t| TerminalInfo {
+                    id: t.id.clone(),
+                    name: t.name.clone(),
+                    state: t.state(),
+                })
+                .collect();
+            send(
+                writer,
+                &DaemonMessage::Terminals {
+                    project_id,
+                    terminals,
+                },
+            )
+            .await?;
+        }
         ClientMessage::CreateTerminal {
+            project_id,
             cwd,
             name,
             startup_command,
@@ -90,12 +160,19 @@ async fn handle_message(
             let id = Uuid::new_v4().to_string();
             let handle = TerminalHandle::spawn(
                 id.clone(),
-                cwd,
-                name,
-                startup_command,
-                DEFAULT_SCROLLBACK_LINES,
+                TerminalConfig {
+                    project_id,
+                    cwd,
+                    name,
+                    startup_command,
+                    scrollback_lines: DEFAULT_SCROLLBACK_LINES,
+                },
             )?;
-            registry.lock().unwrap().insert(id.clone(), handle);
+            registry
+                .terminals
+                .lock()
+                .unwrap()
+                .insert(id.clone(), handle);
             send(writer, &DaemonMessage::Created { terminal_id: id }).await?;
         }
         ClientMessage::Attach { terminal_id } => {
