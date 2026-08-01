@@ -128,7 +128,9 @@ form[aria-label="Create terminal"] label {
   text-transform: uppercase;
 }
 
-input {
+input,
+select,
+textarea {
   border: var(--nb-border);
   border-radius: 4px;
   padding: 8px 12px;
@@ -139,9 +141,39 @@ input {
   outline: none;
 }
 
-input:focus-visible {
+textarea {
+  resize: vertical;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
   outline: 3px solid var(--nb-secondary);
   outline-offset: 2px;
+}
+
+.advanced-options {
+  border: var(--nb-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.advanced-options summary {
+  cursor: pointer;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.advanced-options label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8125rem;
+  text-transform: uppercase;
 }
 
 button {

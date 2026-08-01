@@ -156,6 +156,9 @@ async fn handle_message(
             cwd,
             name,
             startup_command,
+            env_vars,
+            shell,
+            scrollback_lines,
         } => {
             let id = Uuid::new_v4().to_string();
             let handle = TerminalHandle::spawn(
@@ -165,7 +168,9 @@ async fn handle_message(
                     cwd,
                     name,
                     startup_command,
-                    scrollback_lines: DEFAULT_SCROLLBACK_LINES,
+                    env_vars,
+                    shell,
+                    scrollback_lines: scrollback_lines.unwrap_or(DEFAULT_SCROLLBACK_LINES),
                 },
             )?;
             registry

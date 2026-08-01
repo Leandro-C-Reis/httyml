@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::terminal::TerminalState;
@@ -18,6 +20,15 @@ pub enum ClientMessage {
         cwd: String,
         name: Option<String>,
         startup_command: Option<String>,
+        #[serde(default)]
+        env_vars: HashMap<String, String>,
+        /// A bare command name resolved via `PATH` (e.g. `"bash"`) or an
+        /// absolute path. `None`/empty falls back to the Daemon's `$SHELL`.
+        #[serde(default)]
+        shell: Option<String>,
+        /// `None` uses the Daemon's default (see `DEFAULT_SCROLLBACK_LINES`).
+        #[serde(default)]
+        scrollback_lines: Option<usize>,
     },
     Attach {
         terminal_id: String,

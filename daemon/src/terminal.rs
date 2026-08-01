@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -81,6 +81,11 @@ pub struct TerminalConfig {
     pub cwd: String,
     pub name: Option<String>,
     pub startup_command: Option<String>,
+    pub env_vars: HashMap<String, String>,
+    /// Either a bare command name resolved via `PATH` (e.g. `"bash"`) or an
+    /// absolute path (e.g. `"/bin/zsh"`). `None` (or empty) falls back to
+    /// the Daemon's own `$SHELL`, or `/bin/sh` if that's unset.
+    pub shell: Option<String>,
     pub scrollback_lines: usize,
 }
 
@@ -94,6 +99,8 @@ pub struct TerminalHandle {
     pub name: Option<String>,
     pub cwd: String,
     startup_command: Option<String>,
+    env_vars: HashMap<String, String>,
+    shell: Option<String>,
     /// Serializes `stop`, `restart`, and `handle_process_exit` against each
     /// other so none of the three can act on a `process`/`state` pair that
     /// another one is concurrently changing.
@@ -115,6 +122,8 @@ impl TerminalHandle {
             cwd,
             name,
             startup_command,
+            env_vars,
+            shell,
             scrollback_lines,
         } = config;
         let scrollback = Arc::new(Mutex::new(Scrollback::new(scrollback_lines)));
@@ -127,6 +136,8 @@ impl TerminalHandle {
             name,
             cwd,
             startup_command,
+            env_vars,
+            shell,
             lifecycle: Mutex::new(()),
             generation: AtomicU64::new(0),
             process: Mutex::new(None),
@@ -176,9 +187,18 @@ impl TerminalHandle {
             pixel_height: 0,
         })?;
 
-        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+        let shell = self
+            .shell
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .or_else(|| std::env::var("SHELL").ok())
+            .unwrap_or_else(|| "/bin/sh".to_string());
         let mut cmd = CommandBuilder::new(shell);
         cmd.cwd(&self.cwd);
+        for (key, value) in &self.env_vars {
+            cmd.env(key, value);
+        }
 
         let child = pair.slave.spawn_command(cmd)?;
         drop(pair.slave);

@@ -29,17 +29,27 @@ export async function listTerminals(projectId: string): Promise<TerminalInfo[]> 
   return invoke<TerminalInfo[]>("list_terminals", { projectId });
 }
 
+export type CreateTerminalOptions = {
+  name?: string;
+  startupCommand?: string;
+  envVars?: Record<string, string>;
+  shell?: string;
+  scrollbackLines?: number;
+};
+
 export async function createTerminal(
   projectId: string,
   cwd: string,
-  name?: string,
-  startupCommand?: string,
+  options: CreateTerminalOptions = {},
 ): Promise<string> {
   return invoke<string>("create_terminal", {
     projectId,
     cwd,
-    name: name || null,
-    startupCommand: startupCommand || null,
+    name: options.name || null,
+    startupCommand: options.startupCommand || null,
+    envVars: options.envVars ?? {},
+    shell: options.shell || null,
+    scrollbackLines: options.scrollbackLines ?? null,
   });
 }
 

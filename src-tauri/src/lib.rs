@@ -100,17 +100,24 @@ async fn list_terminals(project_id: String) -> Result<Vec<TerminalInfo>, String>
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn create_terminal(
     project_id: String,
     cwd: String,
     name: Option<String>,
     startup_command: Option<String>,
+    env_vars: HashMap<String, String>,
+    shell: Option<String>,
+    scrollback_lines: Option<usize>,
 ) -> Result<String, String> {
     match send_one(ClientMessage::CreateTerminal {
         project_id,
         cwd,
         name,
         startup_command,
+        env_vars,
+        shell,
+        scrollback_lines,
     })
     .await?
     {

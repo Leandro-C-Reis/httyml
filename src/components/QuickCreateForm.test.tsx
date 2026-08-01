@@ -28,7 +28,10 @@ describe("QuickCreateForm", () => {
     await userEvent.type(screen.getByLabelText(/directory/i), "/home/dev/project");
     await userEvent.click(screen.getByRole("button", { name: /new terminal/i }));
 
-    expect(onCreate).toHaveBeenCalledWith("/home/dev/project", "", "");
+    expect(onCreate).toHaveBeenCalledWith(
+      "/home/dev/project",
+      expect.objectContaining({ name: "", startupCommand: "" }),
+    );
   });
 
   it("passes name and startup command through when provided", async () => {
@@ -40,6 +43,27 @@ describe("QuickCreateForm", () => {
     await userEvent.type(screen.getByLabelText(/startup command/i), "npm run dev");
     await userEvent.click(screen.getByRole("button", { name: /new terminal/i }));
 
-    expect(onCreate).toHaveBeenCalledWith("/home/dev/project", "dev server", "npm run dev");
+    expect(onCreate).toHaveBeenCalledWith(
+      "/home/dev/project",
+      expect.objectContaining({ name: "dev server", startupCommand: "npm run dev" }),
+    );
+  });
+
+  it("parses environment variables from the advanced KEY=VALUE textarea", async () => {
+    const onCreate = vi.fn();
+    render(<QuickCreateForm defaultCwd="" onCreate={onCreate} />);
+
+    await userEvent.type(screen.getByLabelText(/directory/i), "/home/dev/project");
+    await userEvent.click(screen.getByText(/advanced/i));
+    await userEvent.type(
+      screen.getByLabelText(/environment variables/i),
+      "NODE_ENV=test\nDEBUG=true",
+    );
+    await userEvent.click(screen.getByRole("button", { name: /new terminal/i }));
+
+    expect(onCreate).toHaveBeenCalledWith(
+      "/home/dev/project",
+      expect.objectContaining({ envVars: { NODE_ENV: "test", DEBUG: "true" } }),
+    );
   });
 });

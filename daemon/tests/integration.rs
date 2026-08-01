@@ -146,6 +146,9 @@ async fn quick_create_starts_a_live_shell_immediately() {
     client
         .send(&ClientMessage::CreateTerminal {
             project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: None,
@@ -188,6 +191,9 @@ async fn attach_replays_buffered_scrollback() {
     client
         .send(&ClientMessage::CreateTerminal {
             project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: Some("echo scrollback-marker".to_string()),
@@ -227,6 +233,9 @@ async fn resize_changes_the_pty_size_seen_by_the_shell() {
     client
         .send(&ClientMessage::CreateTerminal {
             project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: None,
@@ -277,6 +286,9 @@ async fn stop_kills_the_process_and_marks_it_parado() {
     client
         .send(&ClientMessage::CreateTerminal {
             project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: Some("while true; do echo tick; sleep 0.05; done".to_string()),
@@ -325,6 +337,9 @@ async fn restart_spawns_a_fresh_process_using_the_stored_config() {
     client
         .send(&ClientMessage::CreateTerminal {
             project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: Some("echo restart-marker".to_string()),
@@ -383,6 +398,9 @@ async fn config_survives_stop_independently_of_restart_reuse() {
     client
         .send(&ClientMessage::CreateTerminal {
             project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
             cwd: cwd_dir.path().display().to_string(),
             name: Some("my-terminal".to_string()),
             startup_command: None,
@@ -449,6 +467,9 @@ async fn process_exiting_on_its_own_transitions_to_encerrado_with_exit_code() {
     client
         .send(&ClientMessage::CreateTerminal {
             project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: Some("echo before-exit; exit 7".to_string()),
@@ -485,6 +506,9 @@ async fn scrollback_remains_attachable_after_the_process_exits_on_its_own() {
     client
         .send(&ClientMessage::CreateTerminal {
             project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: Some("echo exit-scrollback-marker; exit 3".to_string()),
@@ -528,6 +552,9 @@ async fn restart_works_from_encerrado_same_as_from_parado() {
     client
         .send(&ClientMessage::CreateTerminal {
             project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: Some("echo encerrado-restart-marker; exit 1".to_string()),
@@ -584,6 +611,9 @@ async fn rapid_stop_restart_cycles_never_corrupt_a_later_process() {
     client
         .send(&ClientMessage::CreateTerminal {
             project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
             cwd: "/tmp".to_string(),
             name: None,
             startup_command: None,
@@ -706,6 +736,9 @@ async fn list_terminals_is_scoped_to_its_project() {
     client
         .send(&ClientMessage::CreateTerminal {
             project_id: project_a.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
             cwd: "/tmp".to_string(),
             name: Some("in-a".to_string()),
             startup_command: None,
@@ -719,6 +752,9 @@ async fn list_terminals_is_scoped_to_its_project() {
     client
         .send(&ClientMessage::CreateTerminal {
             project_id: project_b.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
             cwd: "/tmp".to_string(),
             name: Some("in-b".to_string()),
             startup_command: None,
@@ -747,4 +783,185 @@ async fn list_terminals_is_scoped_to_its_project() {
     assert_eq!(terminals_in_a[0].id, terminal_a);
     assert_eq!(terminals_in_a[0].name.as_deref(), Some("in-a"));
     assert!(terminals_in_a.iter().all(|t| t.id != terminal_b));
+}
+
+#[tokio::test]
+async fn configured_env_vars_are_present_in_the_shell() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
+
+    let mut env_vars = std::collections::HashMap::new();
+    env_vars.insert("HTTYML_TEST_VAR".to_string(), "hello-env".to_string());
+
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id,
+            env_vars,
+            shell: None,
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: None,
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+
+    client
+        .send(&ClientMessage::Write {
+            terminal_id,
+            data: STANDARD.encode("echo VAR-IS-$HTTYML_TEST_VAR\n"),
+        })
+        .await;
+
+    client.expect_output_containing("VAR-IS-hello-env").await;
+}
+
+#[tokio::test]
+async fn configured_shell_is_used_to_spawn_the_process() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
+
+    let expected_shell = std::fs::canonicalize("/bin/sh")
+        .unwrap()
+        .display()
+        .to_string();
+
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id,
+            env_vars: std::collections::HashMap::new(),
+            shell: Some("/bin/sh".to_string()),
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: None,
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+
+    client
+        .send(&ClientMessage::Write {
+            terminal_id,
+            data: STANDARD.encode("readlink -f /proc/$$/exe\n"),
+        })
+        .await;
+
+    client.expect_output_containing(&expected_shell).await;
+}
+
+#[tokio::test]
+async fn custom_scrollback_limit_evicts_older_lines() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
+
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id,
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: Some(20),
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: Some("for i in $(seq 1 200); do echo line-$i; done".to_string()),
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    // Wait for the loop to fully finish producing output before attaching.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    let scrollback = match client.recv().await {
+        DaemonMessage::Scrollback { data, .. } => STANDARD.decode(data).unwrap(),
+        other => panic!("expected Scrollback, got {other:?}"),
+    };
+    let text = String::from_utf8_lossy(&scrollback);
+
+    assert!(
+        text.contains("line-200"),
+        "expected the most recent line to survive eviction, got: {text:?}"
+    );
+    assert!(
+        !text.lines().any(|line| line == "line-1"),
+        "expected the earliest lines to have been evicted at the 20-line limit, got: {text:?}"
+    );
+}
+
+#[tokio::test]
+async fn empty_shell_string_falls_back_to_the_default_shell() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
+
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id,
+            env_vars: std::collections::HashMap::new(),
+            shell: Some(String::new()),
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: Some("echo shell-fallback-ok".to_string()),
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+
+    client.expect_output_containing("shell-fallback-ok").await;
 }

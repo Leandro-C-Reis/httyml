@@ -5,6 +5,7 @@ import {
   ensureDaemon,
   listProjects,
   listTerminals,
+  type CreateTerminalOptions,
   type ProjectInfo,
   type TerminalInfo,
 } from "./lib/daemon";
@@ -57,9 +58,9 @@ function App() {
     await refreshTerminals(projectId, null);
   }
 
-  async function handleCreateTerminal(cwd: string, name: string, startupCommand: string) {
+  async function handleCreateTerminal(cwd: string, options: CreateTerminalOptions) {
     if (!selectedProjectId) return;
-    const terminalId = await createTerminal(selectedProjectId, cwd, name, startupCommand);
+    const terminalId = await createTerminal(selectedProjectId, cwd, options);
     setLastCwd(cwd);
     await refreshTerminals(selectedProjectId, terminalId);
   }
