@@ -28,17 +28,32 @@ function App() {
   const [activeTerminalId, setActiveTerminalId] = useState<string | null>(null);
   const [lastCwd, setLastCwd] = useState("");
   const [ready, setReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   // Tracks which Project's terminal list is the most recently requested one,
   // so a slow response for a Project the user has since switched away from
   // can't overwrite what's currently selected (see refreshTerminals).
   const latestProjectRequest = useRef<string | null>(null);
 
   useEffect(() => {
-    void ensureDaemon().then(async () => {
+    void runAction(async () => {
+      await ensureDaemon();
       setProjects(await listProjects());
       setReady(true);
     });
   }, []);
+
+  // Every daemon/Tauri call goes through here so a failure (daemon not
+  // reachable, sidecar not found, ...) surfaces as a visible message instead
+  // of silently doing nothing — see the error banner below.
+  async function runAction(action: () => Promise<void>) {
+    try {
+      setError(null);
+      await action();
+    } catch (err) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   async function refreshTerminals(projectId: string) {
     latestProjectRequest.current = projectId;
@@ -106,23 +121,35 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
-      <ProjectSidebar
-        projects={projects}
-        selectedProjectId={selectedProjectId}
-        onSelect={handleSelectProject}
-        onCreate={handleCreateProject}
-        onDelete={handleDeleteProject}
-      />
-      <main className="container">
+    <div className="app-root">
+      {error && (
+        <div className="error-banner" role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={() => setError(null)} aria-label="Dismiss error">
+            &times;
+          </button>
+        </div>
+      )}
+      <div className="app-shell">
+        <ProjectSidebar
+          projects={projects}
+          selectedProjectId={selectedProjectId}
+          onSelect={(id) => void runAction(() => handleSelectProject(id))}
+          onCreate={(name) => void runAction(() => handleCreateProject(name))}
+          onDelete={(id) => void runAction(() => handleDeleteProject(id))}
+        />
+        <main className="container">
         {!ready ? null : selectedProjectId ? (
           <>
-            <QuickCreateForm defaultCwd={lastCwd} onCreate={handleCreateTerminal} />
+            <QuickCreateForm
+              defaultCwd={lastCwd}
+              onCreate={(cwd, options) => void runAction(() => handleCreateTerminal(cwd, options))}
+            />
             <TerminalTabBar
               terminals={terminals}
               activeTerminalId={activeTerminalId}
               onSelect={openTerminal}
-              onDelete={handleDeleteTerminal}
+              onDelete={(id) => void runAction(() => handleDeleteTerminal(id))}
             />
             {openedTerminalIds.length === 0 ? (
               <p>Select a tab to open it.</p>
@@ -143,7 +170,8 @@ function App() {
         ) : (
           <p>Select or create a project to get started.</p>
         )}
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
