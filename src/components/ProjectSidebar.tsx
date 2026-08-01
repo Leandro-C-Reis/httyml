@@ -6,6 +6,7 @@ type ProjectSidebarProps = {
   selectedProjectId: string | null;
   onSelect: (projectId: string) => void;
   onCreate: (name: string) => void;
+  onDelete: (projectId: string) => void;
 };
 
 export function ProjectSidebar({
@@ -13,6 +14,7 @@ export function ProjectSidebar({
   selectedProjectId,
   onSelect,
   onCreate,
+  onDelete,
 }: ProjectSidebarProps) {
   const [name, setName] = useState("");
 
@@ -27,7 +29,7 @@ export function ProjectSidebar({
     <nav className="project-sidebar" aria-label="Projects">
       <ul>
         {projects.map((project) => (
-          <li key={project.id}>
+          <li key={project.id} className="project-row">
             <button
               type="button"
               className={
@@ -38,6 +40,14 @@ export function ProjectSidebar({
               onClick={() => onSelect(project.id)}
             >
               {project.name}
+            </button>
+            <button
+              type="button"
+              className="button--danger delete-button"
+              aria-label={`Delete project ${project.name}`}
+              onClick={() => onDelete(project.id)}
+            >
+              &times;
             </button>
           </li>
         ))}

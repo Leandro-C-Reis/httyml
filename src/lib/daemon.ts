@@ -77,6 +77,14 @@ export async function restartTerminal(terminalId: string): Promise<void> {
   await invoke("restart_terminal", { terminalId });
 }
 
+export async function deleteTerminal(terminalId: string): Promise<void> {
+  await invoke("delete_terminal", { terminalId });
+}
+
+export async function deleteProject(projectId: string): Promise<void> {
+  await invoke("delete_project", { projectId });
+}
+
 export function onTerminalOutput(
   terminalId: string,
   callback: (msg: DaemonMessage) => void,

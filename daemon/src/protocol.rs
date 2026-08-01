@@ -49,6 +49,15 @@ pub enum ClientMessage {
     Restart {
         terminal_id: String,
     },
+    /// Permanently removes a Terminal's config and state — distinct from
+    /// `Stop`, which preserves both. Kills the process first if running.
+    DeleteTerminal {
+        terminal_id: String,
+    },
+    /// Permanently removes a Project and cascades to all its Terminals.
+    DeleteProject {
+        project_id: String,
+    },
 }
 
 /// A Project as listed to the app — just an id and a name.
@@ -101,6 +110,12 @@ pub enum DaemonMessage {
     StateChanged {
         terminal_id: String,
         state: TerminalState,
+    },
+    TerminalDeleted {
+        terminal_id: String,
+    },
+    ProjectDeleted {
+        project_id: String,
     },
     Error {
         message: String,

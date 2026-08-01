@@ -61,6 +61,16 @@ fn lookup(registry: &Arc<Registry>, terminal_id: &str) -> Option<Arc<TerminalHan
     registry.terminals.lock().unwrap().get(terminal_id).cloned()
 }
 
+/// Kills a Terminal's process (if any) and removes it from the registry —
+/// the shared tail end of `DeleteTerminal` and each Terminal `DeleteProject`
+/// cascades over. Takes the handle directly rather than re-looking it up, so
+/// a caller that already scanned the registry (like the `DeleteProject`
+/// cascade) doesn't lock it again per Terminal.
+fn stop_and_forget(registry: &Arc<Registry>, handle: &Arc<TerminalHandle>) {
+    log_err(handle.stop());
+    registry.terminals.lock().unwrap().remove(&handle.id);
+}
+
 /// Logs a fire-and-forget command's failure (e.g. writing to a `Parado`
 /// Terminal) instead of silently dropping it — these commands have no
 /// response in the protocol, so this is the only visibility into failures.
@@ -279,6 +289,30 @@ async fn handle_message(
             if let Some(handle) = lookup(registry, &terminal_id) {
                 log_err(handle.restart());
             }
+        }
+        ClientMessage::DeleteTerminal { terminal_id } => {
+            // Kill the process first (if any) so deleting a running Terminal
+            // never leaves an orphaned process behind once its TerminalHandle
+            // is dropped.
+            if let Some(handle) = lookup(registry, &terminal_id) {
+                stop_and_forget(registry, &handle);
+            }
+            send(writer, &DaemonMessage::TerminalDeleted { terminal_id }).await?;
+        }
+        ClientMessage::DeleteProject { project_id } => {
+            let handles: Vec<Arc<TerminalHandle>> = registry
+                .terminals
+                .lock()
+                .unwrap()
+                .values()
+                .filter(|t| t.project_id == project_id)
+                .cloned()
+                .collect();
+            for handle in &handles {
+                stop_and_forget(registry, handle);
+            }
+            registry.projects.lock().unwrap().remove(&project_id);
+            send(writer, &DaemonMessage::ProjectDeleted { project_id }).await?;
         }
     }
     Ok(())

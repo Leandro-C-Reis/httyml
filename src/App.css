@@ -53,7 +53,14 @@
   gap: 8px;
 }
 
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .project-item {
+  flex: 1;
   width: 100%;
   text-align: left;
   background-color: #fff;
@@ -65,10 +72,23 @@
   box-shadow: var(--nb-shadow);
 }
 
+.delete-button {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  line-height: 1;
+  box-shadow: none;
+}
+
 .terminal-tab-bar {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.terminal-tab-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .terminal-tab {

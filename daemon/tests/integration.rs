@@ -95,6 +95,28 @@ impl TestClient {
         }
     }
 
+    /// Keep receiving frames until a `TerminalDeleted` for `expected_id`
+    /// arrives — skips over interleaved Output/StateChanged frames from a
+    /// still-attached connection, same reasoning as `expect_state`.
+    async fn expect_terminal_deleted(&mut self, expected_id: &str) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                panic!("timed out waiting for TerminalDeleted({expected_id})");
+            }
+            let frame = timeout(remaining, read_frame(&mut self.stream))
+                .await
+                .unwrap_or_else(|_| panic!("timed out waiting for TerminalDeleted({expected_id})"))
+                .unwrap();
+            let msg: DaemonMessage = serde_json::from_slice(&frame).unwrap();
+            if let DaemonMessage::TerminalDeleted { terminal_id } = msg {
+                assert_eq!(terminal_id, expected_id);
+                return;
+            }
+        }
+    }
+
     /// Asserts no further frame arrives within `duration`.
     async fn expect_silence(&mut self, duration: Duration) {
         let result = timeout(duration, read_frame(&mut self.stream)).await;
@@ -964,4 +986,200 @@ async fn empty_shell_string_falls_back_to_the_default_shell() {
     }
 
     client.expect_output_containing("shell-fallback-ok").await;
+}
+
+#[tokio::test]
+async fn delete_terminal_kills_the_process_and_removes_it_permanently() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
+
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: Some("while true; do echo delete-tick; sleep 0.05; done".to_string()),
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+    client.expect_output_containing("delete-tick").await;
+
+    client
+        .send(&ClientMessage::DeleteTerminal {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_terminal_deleted(&terminal_id).await;
+
+    // The kill signal doesn't retroactively erase a tick the loop had
+    // already flushed to the PTY microseconds earlier — absorb that one
+    // straggler, then confirm the loop itself is truly dead.
+    client.drain_briefly(Duration::from_millis(150)).await;
+    client.expect_silence(Duration::from_millis(300)).await;
+
+    // Gone from its Project's list.
+    client
+        .send(&ClientMessage::ListTerminals {
+            project_id: project_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Terminals { terminals, .. } => {
+            assert!(terminals.iter().all(|t| t.id != terminal_id))
+        }
+        other => panic!("expected Terminals, got {other:?}"),
+    }
+
+    // Cannot be attached to — it no longer exists.
+    let mut second_client = TestClient::connect(&socket_path).await;
+    second_client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match second_client.recv().await {
+        DaemonMessage::Error { .. } => {}
+        other => panic!("expected Error for a deleted terminal, got {other:?}"),
+    }
+
+    // And cannot be restarted: Restart on an unknown id is a silent no-op
+    // (nothing to restart), so attaching afterward still fails the same way
+    // rather than finding a freshly-respawned Terminal.
+    second_client
+        .send(&ClientMessage::Restart {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    second_client
+        .send(&ClientMessage::Attach { terminal_id })
+        .await;
+    match second_client.recv().await {
+        DaemonMessage::Error { .. } => {}
+        other => panic!("expected restart to have no effect on a deleted terminal, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn delete_project_cascades_to_its_terminals() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("cascade-project").await;
+    let other_project_id = client.create_project("untouched-project").await;
+
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id: other_project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: Some("survivor".to_string()),
+            startup_command: None,
+        })
+        .await;
+    let survivor_terminal = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: Some("first".to_string()),
+            startup_command: None,
+        })
+        .await;
+    let terminal_one = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: Some("second".to_string()),
+            startup_command: None,
+        })
+        .await;
+    let terminal_two = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::DeleteProject {
+            project_id: project_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::ProjectDeleted {
+            project_id: deleted,
+        } => {
+            assert_eq!(deleted, project_id)
+        }
+        other => panic!("expected ProjectDeleted, got {other:?}"),
+    }
+
+    client.send(&ClientMessage::ListProjects).await;
+    match client.recv().await {
+        DaemonMessage::Projects { projects } => {
+            assert!(projects.iter().all(|p| p.id != project_id))
+        }
+        other => panic!("expected Projects, got {other:?}"),
+    }
+
+    for terminal_id in [terminal_one, terminal_two] {
+        client.send(&ClientMessage::Attach { terminal_id }).await;
+        match client.recv().await {
+            DaemonMessage::Error { .. } => {}
+            other => panic!("expected Error for a cascade-deleted terminal, got {other:?}"),
+        }
+    }
+
+    // A Terminal in a different, untouched Project must survive the cascade.
+    client.send(&ClientMessage::ListProjects).await;
+    match client.recv().await {
+        DaemonMessage::Projects { projects } => {
+            assert!(projects.iter().any(|p| p.id == other_project_id))
+        }
+        other => panic!("expected Projects, got {other:?}"),
+    }
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: survivor_terminal,
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected the survivor Terminal to still be attachable, got {other:?}"),
+    }
 }

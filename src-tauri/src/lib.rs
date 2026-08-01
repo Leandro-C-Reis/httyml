@@ -11,8 +11,17 @@ use tauri_plugin_shell::ShellExt;
 use tokio::net::UnixStream;
 use tokio::sync::{mpsc, Mutex};
 
+/// An attached Terminal's connection: the sender half of its outgoing
+/// channel, plus the reader task's handle so a delete can tear both
+/// directions down instead of leaving them idling forever on a Terminal
+/// that no longer exists.
+struct AttachedTerminal {
+    sender: mpsc::UnboundedSender<ClientMessage>,
+    reader_task: tokio::task::AbortHandle,
+}
+
 struct AttachedTerminals {
-    senders: Mutex<HashMap<String, mpsc::UnboundedSender<ClientMessage>>>,
+    entries: Mutex<HashMap<String, AttachedTerminal>>,
 }
 
 impl AttachedTerminals {
@@ -22,12 +31,26 @@ impl AttachedTerminals {
         terminal_id: String,
         msg_for: impl FnOnce(String) -> ClientMessage,
     ) -> Result<(), String> {
-        let senders = self.senders.lock().await;
-        let tx = senders
+        let entries = self.entries.lock().await;
+        let entry = entries
             .get(&terminal_id)
             .ok_or_else(|| "terminal not attached".to_string())?;
-        tx.send(msg_for(terminal_id))
+        entry
+            .sender
+            .send(msg_for(terminal_id))
             .map_err(|_| "channel closed".to_string())
+    }
+
+    /// Tears down an attached Terminal's connection: aborts its reader task
+    /// (which also drops its half of the socket) and drops the sender,
+    /// which closes the writer task's channel and ends that task too. A
+    /// no-op if the Terminal was never attached. Called when a Terminal is
+    /// deleted, so its connection doesn't idle forever referencing a
+    /// terminal_id that no longer exists.
+    async fn forget(&self, terminal_id: &str) {
+        if let Some(entry) = self.entries.lock().await.remove(terminal_id) {
+            entry.reader_task.abort();
+        }
     }
 }
 
@@ -137,8 +160,8 @@ async fn attach_terminal(
     terminal_id: String,
 ) -> Result<(), String> {
     {
-        let senders = state.senders.lock().await;
-        if senders.contains_key(&terminal_id) {
+        let entries = state.entries.lock().await;
+        if entries.contains_key(&terminal_id) {
             return Ok(());
         }
     }
@@ -166,7 +189,7 @@ async fn attach_terminal(
     });
 
     let event_name = format!("terminal-output-{terminal_id}");
-    tokio::spawn(async move {
+    let reader_task = tokio::spawn(async move {
         loop {
             let frame = match read_frame(&mut read_half).await {
                 Ok(f) => f,
@@ -179,9 +202,16 @@ async fn attach_terminal(
                 break;
             }
         }
-    });
+    })
+    .abort_handle();
 
-    state.senders.lock().await.insert(terminal_id, tx);
+    state.entries.lock().await.insert(
+        terminal_id,
+        AttachedTerminal {
+            sender: tx,
+            reader_task,
+        },
+    );
     Ok(())
 }
 
@@ -239,13 +269,65 @@ async fn restart_terminal(
         .await
 }
 
+/// Deletes a Terminal and, if it was attached, tears down that connection
+/// too — otherwise it would idle forever referencing a terminal_id that no
+/// longer exists.
+#[tauri::command]
+async fn delete_terminal(
+    state: State<'_, AttachedTerminals>,
+    terminal_id: String,
+) -> Result<(), String> {
+    let result = match send_one(ClientMessage::DeleteTerminal {
+        terminal_id: terminal_id.clone(),
+    })
+    .await?
+    {
+        DaemonMessage::TerminalDeleted { .. } => Ok(()),
+        DaemonMessage::Error { message } => Err(message),
+        _ => Err("unexpected response from daemon".to_string()),
+    };
+    state.forget(&terminal_id).await;
+    result
+}
+
+/// Deletes a Project (cascading to its Terminals) and tears down the
+/// connection for any of those Terminals that were attached.
+#[tauri::command]
+async fn delete_project(
+    state: State<'_, AttachedTerminals>,
+    project_id: String,
+) -> Result<(), String> {
+    let terminal_ids: Vec<String> = match send_one(ClientMessage::ListTerminals {
+        project_id: project_id.clone(),
+    })
+    .await?
+    {
+        DaemonMessage::Terminals { terminals, .. } => terminals.into_iter().map(|t| t.id).collect(),
+        _ => Vec::new(),
+    };
+
+    let result = match send_one(ClientMessage::DeleteProject {
+        project_id: project_id.clone(),
+    })
+    .await?
+    {
+        DaemonMessage::ProjectDeleted { .. } => Ok(()),
+        DaemonMessage::Error { message } => Err(message),
+        _ => Err("unexpected response from daemon".to_string()),
+    };
+    for terminal_id in terminal_ids {
+        state.forget(&terminal_id).await;
+    }
+    result
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .manage(AttachedTerminals {
-            senders: Mutex::new(HashMap::new()),
+            entries: Mutex::new(HashMap::new()),
         })
         .invoke_handler(tauri::generate_handler![
             ensure_daemon,
@@ -257,7 +339,9 @@ pub fn run() {
             write_terminal,
             resize_terminal,
             stop_terminal,
-            restart_terminal
+            restart_terminal,
+            delete_terminal,
+            delete_project
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

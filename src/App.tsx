@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import {
   createProject,
   createTerminal,
+  deleteProject,
+  deleteTerminal,
   ensureDaemon,
   listProjects,
   listTerminals,
@@ -65,6 +67,22 @@ function App() {
     await refreshTerminals(selectedProjectId, terminalId);
   }
 
+  async function handleDeleteTerminal(terminalId: string) {
+    if (!selectedProjectId) return;
+    await deleteTerminal(terminalId);
+    await refreshTerminals(selectedProjectId, activeTerminalId);
+  }
+
+  async function handleDeleteProject(projectId: string) {
+    await deleteProject(projectId);
+    setProjects(await listProjects());
+    if (projectId === selectedProjectId) {
+      setSelectedProjectId(null);
+      setTerminals([]);
+      setActiveTerminalId(null);
+    }
+  }
+
   return (
     <div className="app-shell">
       <ProjectSidebar
@@ -72,6 +90,7 @@ function App() {
         selectedProjectId={selectedProjectId}
         onSelect={handleSelectProject}
         onCreate={handleCreateProject}
+        onDelete={handleDeleteProject}
       />
       <main className="container">
         {!ready ? null : selectedProjectId ? (
@@ -81,6 +100,7 @@ function App() {
               terminals={terminals}
               activeTerminalId={activeTerminalId}
               onSelect={setActiveTerminalId}
+              onDelete={handleDeleteTerminal}
             />
             <div className="terminal-stack">
               {terminals.map((terminal) => (
