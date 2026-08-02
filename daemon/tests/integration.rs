@@ -1619,3 +1619,40 @@ async fn restart_works_after_writing_to_a_stopped_terminal() {
         .await;
     client.expect_output_containing("AFTER-RESTART").await;
 }
+
+#[tokio::test]
+async fn ping_reports_this_process_build_id() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    client.send(&ClientMessage::Ping).await;
+
+    match client.recv().await {
+        DaemonMessage::Pong { build_id } => assert!(
+            !build_id.is_empty(),
+            "expected a non-empty build id in Pong"
+        ),
+        other => panic!("expected Pong, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn shutdown_terminates_the_daemon_process() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    client.send(&ClientMessage::Shutdown).await;
+
+    // The process exits without sending a response — the connection just
+    // closes. A fresh connection attempt should then fail outright, since
+    // nothing is listening on the socket anymore.
+    for _ in 0..50 {
+        if UnixStream::connect(&socket_path).await.is_err() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("daemon was still accepting connections after Shutdown");
+}

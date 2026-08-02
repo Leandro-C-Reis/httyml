@@ -87,10 +87,56 @@ async fn send_one(msg: ClientMessage) -> Result<DaemonMessage, String> {
     serde_json::from_slice(&frame).map_err(|e| e.to_string())
 }
 
+/// Runs the sidecar binary itself with `--build-id` (exits immediately,
+/// never touches the socket) to learn what build is actually on disk right
+/// now, independent of whatever's currently running.
+async fn on_disk_build_id(app: &AppHandle) -> Result<String, String> {
+    let output = app
+        .shell()
+        .sidecar("httyml-daemon")
+        .map_err(|e| e.to_string())?
+        .args(["--build-id"])
+        .output()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// True if a running Daemon's own reported build doesn't match what's on
+/// disk — including if it doesn't answer `Ping` at all, which covers a
+/// Daemon old enough to predate this handshake entirely.
+async fn running_daemon_is_stale(app: &AppHandle) -> Result<bool, String> {
+    let running_build_id = match send_one(ClientMessage::Ping).await {
+        Ok(DaemonMessage::Pong { build_id }) => build_id,
+        _ => return Ok(true),
+    };
+    Ok(running_build_id != on_disk_build_id(app).await?)
+}
+
+async fn wait_until_daemon_stops() {
+    for _ in 0..50 {
+        if !is_daemon_running().await {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 #[tauri::command]
 async fn ensure_daemon(app: AppHandle) -> Result<(), String> {
     if is_daemon_running().await {
-        return Ok(());
+        if !running_daemon_is_stale(&app).await? {
+            return Ok(());
+        }
+        // A stale Daemon (a different build than what's on disk — usually
+        // left over from an earlier `tauri dev` session, or a crash that
+        // didn't clean up) is still holding the socket, silently shadowing
+        // whatever was just built. Replace it: this drops any live
+        // Terminal process back to `Parado`, same as any other Daemon
+        // restart (see `TerminalHandle::reload`'s doc comment) — Terminals
+        // themselves aren't lost, since their config is persisted.
+        let _ = send_one(ClientMessage::Shutdown).await;
+        wait_until_daemon_stops().await;
     }
     spawn_daemon_sidecar(&app).await
 }

@@ -73,6 +73,16 @@ pub enum ClientMessage {
     DeleteProject {
         project_id: String,
     },
+    /// Asks the Daemon to report its build — see `DaemonMessage::Pong` and
+    /// `ensure_daemon` in the Tauri app, which uses this to tell a stale
+    /// Daemon process apart from the one on disk.
+    Ping,
+    /// Terminates the Daemon process immediately. A local, same-user Unix
+    /// socket already grants full control over every Terminal (stop,
+    /// delete, ...), so this adds no meaningful new attack surface — it
+    /// exists so `ensure_daemon` can replace a stale Daemon it detected via
+    /// `Ping`/`Pong` before spawning a fresh one.
+    Shutdown,
 }
 
 /// A Project as listed to the app — just an id and a name.
@@ -145,5 +155,9 @@ pub enum DaemonMessage {
     },
     Error {
         message: String,
+    },
+    /// Reply to `ClientMessage::Ping`, reporting this process's `BUILD_ID`.
+    Pong {
+        build_id: String,
     },
 }

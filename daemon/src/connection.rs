@@ -6,7 +6,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use tokio::net::unix::OwnedWriteHalf;
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{Mutex as AsyncMutex, Notify};
 use uuid::Uuid;
 
 use crate::framing::{read_frame, write_frame};
@@ -86,9 +86,10 @@ fn persist(registry: &Arc<Registry>) {
 type SharedWriter = Arc<AsyncMutex<OwnedWriteHalf>>;
 
 /// Binds the Unix socket at `socket_path` and serves client connections
-/// until the process is killed, loading (and persisting to) Project/Terminal
-/// config at `config_path`. Removes any stale socket file left over from a
-/// previous run before binding.
+/// until a `ClientMessage::Shutdown` arrives or the process is killed,
+/// loading (and persisting to) Project/Terminal config at `config_path`.
+/// Removes any stale socket file left over from a previous run before
+/// binding.
 pub async fn run(socket_path: &Path, config_path: &Path) -> anyhow::Result<()> {
     if socket_path.exists() {
         std::fs::remove_file(socket_path)?;
@@ -99,15 +100,29 @@ pub async fn run(socket_path: &Path, config_path: &Path) -> anyhow::Result<()> {
 
     let listener = UnixListener::bind(socket_path)?;
     let registry = Registry::new(config_path.to_path_buf());
+    // Deliberately not `std::process::exit` — `run` is also driven in-process
+    // by the integration test suite (many `run` calls in one test binary),
+    // where exiting the process would tear down every other test with it.
+    // Returning from this loop is enough: the standalone binary's `main`
+    // ends right after, which exits the real process just as surely.
+    let shutdown = Arc::new(Notify::new());
 
     loop {
-        let (stream, _addr) = listener.accept().await?;
-        let registry = registry.clone();
-        tokio::spawn(async move {
-            if let Err(err) = handle_connection(stream, registry).await {
-                eprintln!("httyml-daemon: connection error: {err:#}");
+        tokio::select! {
+            accepted = listener.accept() => {
+                let (stream, _addr) = accepted?;
+                let registry = registry.clone();
+                let shutdown = shutdown.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = handle_connection(stream, registry, shutdown).await {
+                        eprintln!("httyml-daemon: connection error: {err:#}");
+                    }
+                });
             }
-        });
+            _ = shutdown.notified() => {
+                return Ok(());
+            }
+        }
     }
 }
 
@@ -134,7 +149,11 @@ fn log_err(result: anyhow::Result<()>) {
     }
 }
 
-async fn handle_connection(stream: UnixStream, registry: Arc<Registry>) -> anyhow::Result<()> {
+async fn handle_connection(
+    stream: UnixStream,
+    registry: Arc<Registry>,
+    shutdown: Arc<Notify>,
+) -> anyhow::Result<()> {
     let (mut read_half, write_half) = stream.into_split();
     let writer: SharedWriter = Arc::new(AsyncMutex::new(write_half));
 
@@ -144,7 +163,7 @@ async fn handle_connection(stream: UnixStream, registry: Arc<Registry>) -> anyho
             Err(_) => break, // client disconnected
         };
         let msg: ClientMessage = serde_json::from_slice(&frame)?;
-        handle_message(msg, &registry, &writer).await?;
+        handle_message(msg, &registry, &writer, &shutdown).await?;
     }
     Ok(())
 }
@@ -160,6 +179,7 @@ async fn handle_message(
     msg: ClientMessage,
     registry: &Arc<Registry>,
     writer: &SharedWriter,
+    shutdown: &Arc<Notify>,
 ) -> anyhow::Result<()> {
     match msg {
         ClientMessage::CreateProject { name } => {
@@ -409,6 +429,18 @@ async fn handle_message(
             registry.projects.lock().unwrap().remove(&project_id);
             persist(registry);
             send(writer, &DaemonMessage::ProjectDeleted { project_id }).await?;
+        }
+        ClientMessage::Ping => {
+            send(
+                writer,
+                &DaemonMessage::Pong {
+                    build_id: crate::BUILD_ID.to_string(),
+                },
+            )
+            .await?;
+        }
+        ClientMessage::Shutdown => {
+            shutdown.notify_one();
         }
     }
     Ok(())
