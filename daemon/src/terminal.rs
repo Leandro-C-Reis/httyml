@@ -51,16 +51,16 @@ impl Scrollback {
     }
 }
 
-/// A Terminal's lifecycle state. `Parado` is a user-initiated stop;
-/// `Encerrado` is the process exiting on its own (and records why).
+/// A Terminal's lifecycle state. `Stopped` is a user-initiated stop;
+/// `Exited` is the process exiting on its own (and records why).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TerminalState {
-    Rodando,
-    Parado,
-    Encerrado { exit_code: i32 },
+    Running,
+    Stopped,
+    Exited { exit_code: i32 },
 }
 
-/// The live PTY/process bits of a Terminal — present only while `Rodando`.
+/// The live PTY/process bits of a Terminal — present only while `Running`.
 /// `generation` identifies which `start_process` call produced it, so a
 /// reader thread from a since-replaced process can tell "the process I was
 /// reading died" apart from "a restart already installed a newer one" —
@@ -119,7 +119,7 @@ pub struct TerminalHandle {
 
 impl TerminalHandle {
     /// Builds a Terminal from config without starting a process — always
-    /// `Parado` until `start_process` runs. Shared by `spawn` (which starts
+    /// `Stopped` until `start_process` runs. Shared by `spawn` (which starts
     /// immediately, for quick-create) and `reload` (which doesn't, since a
     /// reloaded Terminal's previous process is long gone).
     fn build(id: String, config: TerminalConfig) -> Arc<TerminalHandle> {
@@ -135,7 +135,7 @@ impl TerminalHandle {
             lifecycle: Mutex::new(()),
             generation: AtomicU64::new(0),
             process: Mutex::new(None),
-            state: Mutex::new(TerminalState::Parado),
+            state: Mutex::new(TerminalState::Stopped),
             scrollback,
             tx,
             state_tx,
@@ -150,7 +150,7 @@ impl TerminalHandle {
 
     /// Reconstructs a Terminal from persisted config on Daemon startup,
     /// without starting a process — whatever ran before is gone now that
-    /// the Daemon itself restarted. Starts `Parado`; `restart()` spawns a
+    /// the Daemon itself restarted. Starts `Stopped`; `restart()` spawns a
     /// fresh process reusing this same config, same as restarting a
     /// Terminal the user stopped themselves.
     pub fn reload(id: String, config: TerminalConfig) -> Arc<TerminalHandle> {
@@ -262,7 +262,7 @@ impl TerminalHandle {
             writer,
             child,
         });
-        self.set_state(TerminalState::Rodando);
+        self.set_state(TerminalState::Running);
 
         let handle = self.clone();
         std::thread::spawn(move || {
@@ -271,7 +271,7 @@ impl TerminalHandle {
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
-                        let chunk = buf[..n].to_vec();
+                        let chunk = buf.as_slice()[..n].to_vec();
                         if let Ok(mut sb) = handle.scrollback.lock() {
                             sb.push(&chunk);
                             let _ = handle.tx.send(chunk);
@@ -307,7 +307,7 @@ impl TerminalHandle {
             .wait()
             .map(|status| status.exit_code() as i32)
             .unwrap_or(-1);
-        self.set_state(TerminalState::Encerrado { exit_code });
+        self.set_state(TerminalState::Exited { exit_code });
     }
 
     fn set_state(&self, state: TerminalState) {
@@ -315,10 +315,10 @@ impl TerminalHandle {
         let _ = self.state_tx.send(state);
     }
 
-    /// Kills the running process and moves to `Parado`. The config (cwd,
+    /// Kills the running process and moves to `Stopped`. The config (cwd,
     /// name, startup command) and scrollback are untouched. A no-op if
-    /// there's no live process (already `Parado` or `Encerrado`) — in
-    /// particular this must NOT force `Parado` over an `Encerrado` the
+    /// there's no live process (already `Stopped` or `Exited`) — in
+    /// particular this must NOT force `Stopped` over an `Exited` the
     /// reader thread already recorded.
     pub fn stop(&self) -> anyhow::Result<()> {
         let _guard = self.lifecycle.lock().unwrap();
@@ -344,18 +344,18 @@ impl TerminalHandle {
             }
             let _ = live.child.kill();
             let _ = live.child.wait();
-            self.set_state(TerminalState::Parado);
+            self.set_state(TerminalState::Stopped);
         }
         Ok(())
     }
 
     /// Spawns a fresh process reusing the stored config. A no-op if already
-    /// `Rodando`. Holds `lifecycle` across the whole check-then-spawn so a
+    /// `Running`. Holds `lifecycle` across the whole check-then-spawn so a
     /// second concurrent call can't also pass the check and orphan a
     /// process by overwriting the first one's `LiveProcess`.
     pub fn restart(self: &Arc<Self>) -> anyhow::Result<()> {
         let _guard = self.lifecycle.lock().unwrap();
-        if self.state() == TerminalState::Rodando {
+        if self.state() == TerminalState::Running {
             return Ok(());
         }
         self.start_process()

@@ -35,16 +35,16 @@ type TerminalViewProps = {
   onError: (message: string) => void;
 };
 
-function stateVariant(state: TerminalState): "rodando" | "parado" | "encerrado" {
-  if (state === "Rodando") return "rodando";
-  if (state === "Parado") return "parado";
-  return "encerrado";
+function stateVariant(state: TerminalState): "running" | "stopped" | "exited" {
+  if (state === "Running") return "running";
+  if (state === "Stopped") return "stopped";
+  return "exited";
 }
 
 function stateLabel(state: TerminalState): string {
-  if (state === "Rodando") return "rodando";
-  if (state === "Parado") return "parado";
-  return `encerrado (${state.Encerrado.exit_code})`;
+  if (state === "Running") return "running";
+  if (state === "Stopped") return "stopped";
+  return `exited (${state.Exited.exit_code})`;
 }
 
 export function TerminalView({
@@ -60,7 +60,7 @@ export function TerminalView({
   onError,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [state, setState] = useState<TerminalState>("Rodando");
+  const [state, setState] = useState<TerminalState>("Running");
 
   useEffect(() => {
     const term = new Terminal();
@@ -90,7 +90,7 @@ export function TerminalView({
         // a freshly started Terminal look blank/frozen. Reset whenever a
         // *new* process actually starts (not on the initial attach, which
         // would wipe legitimately replayed scrollback instead).
-        if (hasReceivedInitialState && msg.state === "Rodando") {
+        if (hasReceivedInitialState && msg.state === "Running") {
           term.reset();
         }
         hasReceivedInitialState = true;
@@ -105,7 +105,7 @@ export function TerminalView({
     // before any JS-side listener exists is dropped, not queued. Attaching
     // first left a real (if narrow) window where the initial Scrollback +
     // StateChanged could arrive and vanish before `onTerminalOutput` ever
-    // subscribed — leaving the Terminal stuck on the `useState("Rodando")`
+    // subscribed — leaving the Terminal stuck on the `useState("Running")`
     // default with no scrollback and no error, since nothing ever rejected.
     onTerminalOutput(terminalId, handleMessage)
       .then((fn) => {
@@ -145,11 +145,11 @@ export function TerminalView({
     };
   }, [terminalId]);
 
-  const isRunning = state === "Rodando";
+  const isRunning = state === "Running";
   const statusColor =
-    stateVariant(state) === "rodando"
+    stateVariant(state) === "running"
       ? "bg-secondary text-on-secondary"
-      : stateVariant(state) === "parado"
+      : stateVariant(state) === "stopped"
         ? "bg-error text-on-error"
         : "bg-warning text-white";
   const actionBtn = "btn px-3 py-1.5 text-xs";

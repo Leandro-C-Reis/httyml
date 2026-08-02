@@ -26,7 +26,7 @@ pub struct Registry {
 impl Registry {
     /// Loads persisted Projects/Terminal configs from `config_path` (empty
     /// if the file doesn't exist or fails to parse — see `store::load`).
-    /// Reloaded Terminals start `Parado`: whatever process they had is long
+    /// Reloaded Terminals start `Stopped`: whatever process they had is long
     /// gone now that the Daemon itself restarted.
     fn new(config_path: PathBuf) -> Arc<Self> {
         let (loaded_projects, loaded_terminals) = store::load(&config_path);
@@ -140,7 +140,7 @@ fn stop_and_forget(registry: &Arc<Registry>, handle: &Arc<TerminalHandle>) {
     registry.terminals.lock().unwrap().remove(&handle.id);
 }
 
-/// Logs a fire-and-forget command's failure (e.g. writing to a `Parado`
+/// Logs a fire-and-forget command's failure (e.g. writing to a `Stopped`
 /// Terminal) instead of silently dropping it — these commands have no
 /// response in the protocol, so this is the only visibility into failures.
 fn log_err(result: anyhow::Result<()>) {

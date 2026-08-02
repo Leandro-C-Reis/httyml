@@ -91,8 +91,7 @@
      flush with the shell, like a divider tab pulled forward out of a stack
      of cards. */
   .tab {
-    @apply relative top-1 border-2 border-b-0 border-ink bg-surface-container-lowest px-4 pt-2 pb-1.5 font-mono text-sm font-bold tracking-wide text-ink uppercase transition-colors duration-100;
-    cursor: pointer;
+    @apply relative top-1 border-2 border-b-0 border-ink bg-surface-container-lowest px-4 pt-2 pb-1.5 font-mono text-sm font-bold tracking-wide text-ink uppercase transition-colors duration-100 cursor-pointer;
   }
   .tab:hover {
     @apply bg-surface-variant;

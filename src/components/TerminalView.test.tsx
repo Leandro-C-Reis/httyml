@@ -66,7 +66,7 @@ function renderTerminalView(overrides: Partial<Parameters<typeof TerminalView>[0
       onEdit={onEdit}
       onDelete={onDelete}
       tabs={[
-        { id: "abc123", name: "Terminal 1", cwd: "/home/dev/project", startup_command: null, env_vars: {}, shell: null, scrollback_lines: 10000, state: "Rodando" },
+        { id: "abc123", name: "Terminal 1", cwd: "/home/dev/project", startup_command: null, env_vars: {}, shell: null, scrollback_lines: 10000, state: "Running" },
       ]}
       activeTerminalId="abc123"
       onSelectTab={onSelectTab}
@@ -98,10 +98,10 @@ describe("TerminalView", () => {
     const handleMessage = vi.mocked(daemon.onTerminalOutput).mock.calls[0][1];
 
     // The first StateChanged just reports wherever the Terminal already
-    // was (Rodando, since attach found it live) — resetting here would
+    // was (Running, since attach found it live) — resetting here would
     // wipe the scrollback that was just replayed.
     act(() => {
-      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Rodando" });
+      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Running" });
     });
     expect(mockReset).not.toHaveBeenCalled();
 
@@ -109,12 +109,12 @@ describe("TerminalView", () => {
     // so any stuck alternate-screen-buffer state from whatever was killed
     // must be cleared.
     act(() => {
-      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Parado" });
+      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Stopped" });
     });
     expect(mockReset).not.toHaveBeenCalled();
 
     act(() => {
-      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Rodando" });
+      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Running" });
     });
     expect(mockReset).toHaveBeenCalledTimes(1);
   });
@@ -168,29 +168,29 @@ describe("TerminalView", () => {
     expect(daemon.writeTerminal).toHaveBeenCalledWith("abc123", "ls -la\n");
   });
 
-  it("shows the name, directory, and a running indicator with a stop action for a rodando Terminal", async () => {
+  it("shows the name, directory, and a running indicator with a stop action for a running Terminal", async () => {
     renderTerminalView();
     await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());
 
     expect(screen.getByRole("heading", { name: "Terminal 1" })).toBeInTheDocument();
     expect(screen.getByText("/home/dev/project")).toBeInTheDocument();
-    expect(screen.getByTestId("terminal-status")).toHaveTextContent(/rodando/i);
+    expect(screen.getByTestId("terminal-status")).toHaveTextContent(/running/i);
     const stopButton = screen.getByRole("button", { name: /stop/i });
 
     await userEvent.click(stopButton);
     expect(daemon.stopTerminal).toHaveBeenCalledWith("abc123");
   });
 
-  it("switches to a parado indicator and a start action once the terminal is parado", async () => {
+  it("switches to a stopped indicator and a start action once the terminal is stopped", async () => {
     renderTerminalView();
     await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());
     const handleMessage = vi.mocked(daemon.onTerminalOutput).mock.calls[0][1];
 
     act(() => {
-      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Parado" });
+      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Stopped" });
     });
 
-    expect(screen.getByTestId("terminal-status")).toHaveTextContent(/parado/i);
+    expect(screen.getByTestId("terminal-status")).toHaveTextContent(/stopped/i);
     const startButton = screen.getByRole("button", { name: /start/i });
 
     await userEvent.click(startButton);
@@ -205,7 +205,7 @@ describe("TerminalView", () => {
     const onDataCallback = mockOnData.mock.calls[0][0];
 
     act(() => {
-      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Parado" });
+                    handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Stopped" });
     });
 
     // The user types before noticing the Terminal isn't running.
@@ -217,7 +217,7 @@ describe("TerminalView", () => {
     expect(daemon.restartTerminal).toHaveBeenCalledWith("abc123");
   });
 
-  it("shows a distinct encerrado indicator with the exit code and a start action", async () => {
+  it("shows a distinct exited indicator with the exit code and a start action", async () => {
     renderTerminalView();
     await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());
     const handleMessage = vi.mocked(daemon.onTerminalOutput).mock.calls[0][1];
@@ -226,14 +226,14 @@ describe("TerminalView", () => {
       handleMessage({
         type: "StateChanged",
         terminal_id: "abc123",
-        state: { Encerrado: { exit_code: 7 } },
+        state: { Exited: { exit_code: 7 } },
       });
     });
 
     const status = screen.getByTestId("terminal-status");
-    expect(status).toHaveTextContent(/encerrado/i);
+    expect(status).toHaveTextContent(/exited/i);
     expect(status).toHaveTextContent("7");
-    expect(status).toHaveAttribute("data-state", "encerrado");
+    expect(status).toHaveAttribute("data-state", "exited");
 
     const startButton = screen.getByRole("button", { name: /start/i });
     await userEvent.click(startButton);
@@ -254,8 +254,8 @@ describe("TerminalView", () => {
   it("renders the tab bar below the title, wired to onSelectTab and onAddTab", async () => {
     const { onSelectTab, onAddTab } = renderTerminalView({
       tabs: [
-        { id: "abc123", name: "Terminal 1", cwd: "/home/dev/project", startup_command: null, env_vars: {}, shell: null, scrollback_lines: 10000, state: "Rodando" },
-        { id: "def456", name: "Terminal 2", cwd: "/home/dev/project", startup_command: null, env_vars: {}, shell: null, scrollback_lines: 10000, state: "Rodando" },
+        { id: "abc123", name: "Terminal 1", cwd: "/home/dev/project", startup_command: null, env_vars: {}, shell: null, scrollback_lines: 10000, state: "Running" },
+        { id: "def456", name: "Terminal 2", cwd: "/home/dev/project", startup_command: null, env_vars: {}, shell: null, scrollback_lines: 10000, state: "Running" },
       ],
     });
     await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());

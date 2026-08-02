@@ -132,7 +132,7 @@ async fn ensure_daemon(app: AppHandle) -> Result<(), String> {
         // left over from an earlier `tauri dev` session, or a crash that
         // didn't clean up) is still holding the socket, silently shadowing
         // whatever was just built. Replace it: this drops any live
-        // Terminal process back to `Parado`, same as any other Daemon
+        // Terminal process back to `Stopped`, same as any other Daemon
         // restart (see `TerminalHandle::reload`'s doc comment) — Terminals
         // themselves aren't lost, since their config is persisted.
         let _ = send_one(ClientMessage::Shutdown).await;

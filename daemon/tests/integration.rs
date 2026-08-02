@@ -309,7 +309,7 @@ async fn resize_changes_the_pty_size_seen_by_the_shell() {
 }
 
 #[tokio::test]
-async fn stop_kills_the_process_and_marks_it_parado() {
+async fn stop_kills_the_process_and_marks_it_stopped() {
     let (_dir, socket_path) = temp_socket_path();
     spawn_daemon(socket_path.clone());
 
@@ -340,7 +340,7 @@ async fn stop_kills_the_process_and_marks_it_parado() {
         DaemonMessage::Scrollback { .. } => {}
         other => panic!("expected Scrollback, got {other:?}"),
     }
-    client.expect_state(TerminalState::Rodando).await;
+    client.expect_state(TerminalState::Running).await;
 
     // Confirm the loop is actually producing output before stopping it.
     client.expect_output_containing("tick").await;
@@ -350,7 +350,7 @@ async fn stop_kills_the_process_and_marks_it_parado() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client.expect_state(TerminalState::Parado).await;
+    client.expect_state(TerminalState::Stopped).await;
 
     // The kill signal doesn't retroactively erase a tick the loop had
     // already flushed to the PTY microseconds earlier — absorb that one
@@ -391,7 +391,7 @@ async fn restart_spawns_a_fresh_process_using_the_stored_config() {
         DaemonMessage::Scrollback { .. } => {}
         other => panic!("expected Scrollback, got {other:?}"),
     }
-    client.expect_state(TerminalState::Rodando).await;
+    client.expect_state(TerminalState::Running).await;
     client.expect_output_containing("restart-marker").await;
 
     client
@@ -399,14 +399,14 @@ async fn restart_spawns_a_fresh_process_using_the_stored_config() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client.expect_state(TerminalState::Parado).await;
+    client.expect_state(TerminalState::Stopped).await;
 
     client
         .send(&ClientMessage::Restart {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client.expect_state(TerminalState::Rodando).await;
+    client.expect_state(TerminalState::Running).await;
 
     // The startup command ran again on the fresh process — same stored config.
     client.expect_output_containing("restart-marker").await;
@@ -452,7 +452,7 @@ async fn config_survives_stop_independently_of_restart_reuse() {
         DaemonMessage::Scrollback { .. } => {}
         other => panic!("expected Scrollback, got {other:?}"),
     }
-    client.expect_state(TerminalState::Rodando).await;
+    client.expect_state(TerminalState::Running).await;
 
     client
         .send(&ClientMessage::Write {
@@ -467,7 +467,7 @@ async fn config_survives_stop_independently_of_restart_reuse() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client.expect_state(TerminalState::Parado).await;
+    client.expect_state(TerminalState::Stopped).await;
 
     // Nothing so far proves the *config* (as opposed to just the dead
     // process) survived — restart on a process reusing `cwd` is the only
@@ -478,7 +478,7 @@ async fn config_survives_stop_independently_of_restart_reuse() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client.expect_state(TerminalState::Rodando).await;
+    client.expect_state(TerminalState::Running).await;
 
     client
         .send(&ClientMessage::Write {
@@ -490,7 +490,7 @@ async fn config_survives_stop_independently_of_restart_reuse() {
 }
 
 #[tokio::test]
-async fn process_exiting_on_its_own_transitions_to_encerrado_with_exit_code() {
+async fn process_exiting_on_its_own_transitions_to_exited_with_exit_code() {
     let (_dir, socket_path) = temp_socket_path();
     spawn_daemon(socket_path.clone());
 
@@ -524,7 +524,7 @@ async fn process_exiting_on_its_own_transitions_to_encerrado_with_exit_code() {
 
     client.expect_output_containing("before-exit").await;
     client
-        .expect_state(TerminalState::Encerrado { exit_code: 7 })
+        .expect_state(TerminalState::Exited { exit_code: 7 })
         .await;
 }
 
@@ -570,12 +570,12 @@ async fn scrollback_remains_attachable_after_the_process_exits_on_its_own() {
     );
 
     client
-        .expect_state(TerminalState::Encerrado { exit_code: 3 })
+        .expect_state(TerminalState::Exited { exit_code: 3 })
         .await;
 }
 
 #[tokio::test]
-async fn restart_works_from_encerrado_same_as_from_parado() {
+async fn restart_works_from_exited_same_as_from_stopped() {
     let (_dir, socket_path) = temp_socket_path();
     spawn_daemon(socket_path.clone());
 
@@ -589,7 +589,7 @@ async fn restart_works_from_encerrado_same_as_from_parado() {
             scrollback_lines: None,
             cwd: "/tmp".to_string(),
             name: None,
-            startup_command: Some("echo encerrado-restart-marker; exit 1".to_string()),
+            startup_command: Some("echo exited-restart-marker; exit 1".to_string()),
         })
         .await;
     let terminal_id = match client.recv().await {
@@ -607,10 +607,10 @@ async fn restart_works_from_encerrado_same_as_from_parado() {
         other => panic!("expected Scrollback, got {other:?}"),
     }
     client
-        .expect_output_containing("encerrado-restart-marker")
+        .expect_output_containing("exited-restart-marker")
         .await;
     client
-        .expect_state(TerminalState::Encerrado { exit_code: 1 })
+        .expect_state(TerminalState::Exited { exit_code: 1 })
         .await;
 
     client
@@ -618,11 +618,11 @@ async fn restart_works_from_encerrado_same_as_from_parado() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client.expect_state(TerminalState::Rodando).await;
+    client.expect_state(TerminalState::Running).await;
 
     // The startup command ran again on the fresh process — same stored config.
     client
-        .expect_output_containing("encerrado-restart-marker")
+        .expect_output_containing("exited-restart-marker")
         .await;
 }
 
@@ -634,7 +634,7 @@ async fn rapid_stop_restart_cycles_never_corrupt_a_later_process() {
     // the newly-installed process for its own dead one (see the
     // `generation` tag on `LiveProcess` / `handle_process_exit`) — that bug
     // would either hang future stop/restart calls or spuriously mark a
-    // perfectly live process `Encerrado`.
+    // perfectly live process `Exited`.
     let (_dir, socket_path) = temp_socket_path();
     spawn_daemon(socket_path.clone());
 
@@ -704,14 +704,14 @@ async fn rapid_stop_restart_cycles_never_corrupt_a_later_process() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client.expect_state(TerminalState::Parado).await;
+    client.expect_state(TerminalState::Stopped).await;
 
     client
         .send(&ClientMessage::Restart {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client.expect_state(TerminalState::Rodando).await;
+    client.expect_state(TerminalState::Running).await;
 }
 
 #[tokio::test]
@@ -1261,8 +1261,8 @@ async fn config_survives_a_daemon_restart() {
                 .unwrap_or_else(|| panic!("terminal not reloaded, got: {terminals:?}"));
             assert_eq!(reloaded.name.as_deref(), Some("persisted-terminal"));
             // Live process state is never persisted — reloaded Terminals are
-            // always Parado, regardless of what they were doing before.
-            assert_eq!(reloaded.state, TerminalState::Parado);
+            // always Stopped, regardless of what they were doing before.
+            assert_eq!(reloaded.state, TerminalState::Stopped);
         }
         other => panic!("expected Terminals, got {other:?}"),
     }
@@ -1283,7 +1283,7 @@ async fn config_survives_a_daemon_restart() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client_b.expect_state(TerminalState::Rodando).await;
+    client_b.expect_state(TerminalState::Running).await;
     client_b.expect_output_containing("persisted-marker").await;
 
     client_b
@@ -1424,7 +1424,7 @@ async fn update_terminal_config_takes_effect_on_next_restart_not_before() {
         DaemonMessage::Scrollback { .. } => {}
         other => panic!("expected Scrollback, got {other:?}"),
     }
-    client.expect_state(TerminalState::Rodando).await;
+    client.expect_state(TerminalState::Running).await;
 
     let mut env_vars = std::collections::HashMap::new();
     env_vars.insert("HTTYML_TEST_VAR".to_string(), "updated-value".to_string());
@@ -1459,14 +1459,14 @@ async fn update_terminal_config_takes_effect_on_next_restart_not_before() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client.expect_state(TerminalState::Parado).await;
+    client.expect_state(TerminalState::Stopped).await;
 
     client
         .send(&ClientMessage::Restart {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client.expect_state(TerminalState::Rodando).await;
+    client.expect_state(TerminalState::Running).await;
 
     client
         .send(&ClientMessage::Write {
@@ -1517,7 +1517,7 @@ async fn stop_kills_the_active_foreground_job_not_just_the_shell() {
         DaemonMessage::Scrollback { .. } => {}
         other => panic!("expected Scrollback, got {other:?}"),
     }
-    client.expect_state(TerminalState::Rodando).await;
+    client.expect_state(TerminalState::Running).await;
     client.expect_output_containing("ZOMBIE-TICK").await;
 
     client
@@ -1525,7 +1525,7 @@ async fn stop_kills_the_active_foreground_job_not_just_the_shell() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client.expect_state(TerminalState::Parado).await;
+    client.expect_state(TerminalState::Stopped).await;
     client.drain_briefly(Duration::from_millis(150)).await;
 
     client
@@ -1533,7 +1533,7 @@ async fn stop_kills_the_active_foreground_job_not_just_the_shell() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client.expect_state(TerminalState::Rodando).await;
+    client.expect_state(TerminalState::Running).await;
 
     client
         .send(&ClientMessage::Write {
@@ -1586,14 +1586,14 @@ async fn restart_works_after_writing_to_a_stopped_terminal() {
         DaemonMessage::Scrollback { .. } => {}
         other => panic!("expected Scrollback, got {other:?}"),
     }
-    client.expect_state(TerminalState::Rodando).await;
+    client.expect_state(TerminalState::Running).await;
 
     client
         .send(&ClientMessage::Stop {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client.expect_state(TerminalState::Parado).await;
+    client.expect_state(TerminalState::Stopped).await;
 
     // Typing into a stopped Terminal — the user pressing keys before
     // noticing it's not running.
@@ -1609,7 +1609,7 @@ async fn restart_works_after_writing_to_a_stopped_terminal() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client.expect_state(TerminalState::Rodando).await;
+    client.expect_state(TerminalState::Running).await;
 
     client
         .send(&ClientMessage::Write {

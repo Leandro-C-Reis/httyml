@@ -75,7 +75,7 @@ describe("App", () => {
         env_vars: {},
         shell: null,
         scrollback_lines: 10000,
-        state: "Rodando",
+        state: "Running",
       },
       {
         id: "t2",
@@ -85,7 +85,7 @@ describe("App", () => {
         env_vars: {},
         shell: null,
         scrollback_lines: 10000,
-        state: "Rodando",
+        state: "Running",
       },
     ]);
     render(<App />);
@@ -104,7 +104,7 @@ describe("App", () => {
       env_vars: {},
       shell: null,
       scrollback_lines: 10000,
-      state: "Rodando" as const,
+      state: "Running" as const,
     };
     const t2 = { ...t1, id: "t2", name: "Terminal 2" };
     const t3 = { ...t1, id: "t3", name: "Terminal 3" };
@@ -158,7 +158,7 @@ describe("App", () => {
         env_vars: {},
         shell: null,
         scrollback_lines: 10000,
-        state: "Rodando",
+        state: "Running",
       },
     ]);
     render(<App />);

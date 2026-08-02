@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-export type TerminalState = "Rodando" | "Parado" | { Encerrado: { exit_code: number } };
+export type TerminalState = "Running" | "Stopped" | { Exited: { exit_code: number } };
 
 export type ProjectInfo = { id: string; name: string };
 // Field names below match the daemon's actual JSON wire format (Rust struct
