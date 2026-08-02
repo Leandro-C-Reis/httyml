@@ -31,13 +31,17 @@ Daemon lives in [daemon/](daemon/) (Rust), built via `scripts/build-daemon-sidec
 
 ## Roadmap
 
-- [ ] Terminal search / fuzzy jump across all Projects
-- [ ] Session recording + replay of Terminal output
+- [ ] Fix TERM environment variable for all shells (currently only bash) `export TERM=xterm-256color`
+- [ ] Fix whiptail size not matching Terminal size (currently only bash)
+- [ ] Terminal resize / font size / wheel zoom
+- [ ] Daemon auto-restart / health check with app-side reconnect banner
+- [ ] Global keyboard shortcuts for Terminal switching
+- [ ] Export/import Project + Terminal configs as JSON
+- [ ] Themeable terminal color schemes
+- [ ] Automated build release for Linux (Tauri)
+- [ ] Project templates (predefined Terminal set with cwd/startup command)
 - [ ] Per-Terminal notifications on process exit or pattern match (e.g. "Build failed")
 - [ ] Layout presets — split panes, grid view for multiple Terminals at once
-- [ ] Project templates (predefined Terminal set with cwd/startup command)
-- [ ] Export/import Project + Terminal configs as JSON
-- [ ] Global keyboard shortcuts for Terminal switching
-- [ ] Daemon auto-restart / health check with app-side reconnect banner
 - [ ] Remote Daemon support (opt-in, currently local-only by design — see ADR-0005)
-- [ ] Themeable terminal color schemes
+- [ ] Terminal search / fuzzy jump across all Projects
+- [ ] Session recording + replay of Terminal output
