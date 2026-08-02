@@ -10,7 +10,10 @@ const mockLoadAddon = vi.fn();
 const mockDispose = vi.fn();
 const mockFit = vi.fn();
 const mockOnData = vi.fn();
-const mockReset = vi.fn();
+// Mutable so individual tests can simulate "a TUI program left the
+// alternate screen buffer active" by flipping `.type` before dispatching
+// the StateChanged that should (or shouldn't) react to it.
+const mockBuffer = { active: { type: "normal" as "normal" | "alternate" } };
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: vi.fn().mockImplementation(function TerminalMock() {
@@ -23,7 +26,7 @@ vi.mock("@xterm/xterm", () => ({
         return { dispose: vi.fn() };
       },
       dispose: mockDispose,
-      reset: mockReset,
+      buffer: mockBuffer,
       rows: 24,
       cols: 80,
     };
@@ -81,6 +84,7 @@ function renderTerminalView(overrides: Partial<Parameters<typeof TerminalView>[0
 describe("TerminalView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockBuffer.active.type = "normal";
   });
 
   it("attaches to the terminal and subscribes to its output on mount", async () => {
@@ -92,31 +96,53 @@ describe("TerminalView", () => {
     });
   });
 
-  it("does not reset the display for the initial attach state, only for a later fresh start", async () => {
+  it("does not touch the display for the initial attach state, or a fresh start that isn't stuck in the alternate buffer", async () => {
     renderTerminalView();
     await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());
     const handleMessage = vi.mocked(daemon.onTerminalOutput).mock.calls[0][1];
 
     // The first StateChanged just reports wherever the Terminal already
-    // was (Running, since attach found it live) — resetting here would
-    // wipe the scrollback that was just replayed.
+    // was (Running, since attach found it live) — this must never touch
+    // the display, whatever the buffer happens to be.
     act(() => {
       handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Running" });
     });
-    expect(mockReset).not.toHaveBeenCalled();
+    expect(mockWrite).not.toHaveBeenCalledWith("\x1b[?1049l");
 
-    // Stop, then a real Start — a fresh process actually began this time,
-    // so any stuck alternate-screen-buffer state from whatever was killed
-    // must be cleared.
+    // Stop, then a real Start — a fresh process began, but it never left
+    // the normal buffer, so there's nothing to clean up.
     act(() => {
       handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Stopped" });
     });
-    expect(mockReset).not.toHaveBeenCalled();
+    act(() => {
+      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Running" });
+    });
+    expect(mockWrite).not.toHaveBeenCalledWith("\x1b[?1049l");
+  });
+
+  it("steps out of a stuck alternate screen buffer on a fresh start, without wiping the normal buffer's history", async () => {
+    renderTerminalView();
+    await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());
+    const handleMessage = vi.mocked(daemon.onTerminalOutput).mock.calls[0][1];
 
     act(() => {
       handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Running" });
     });
-    expect(mockReset).toHaveBeenCalledTimes(1);
+    act(() => {
+      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Stopped" });
+    });
+
+    // The killed process (a TUI dev server, htop, ...) left the alternate
+    // screen buffer active.
+    mockBuffer.active.type = "alternate";
+
+    act(() => {
+      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Running" });
+    });
+
+    // Only the "leave alternate screen" sequence is written — never a full
+    // reset, which would also wipe the normal buffer's own content.
+    expect(mockWrite).toHaveBeenCalledWith("\x1b[?1049l");
   });
 
   it("detaches on unmount, so a later re-attach for the same Terminal isn't a stale no-op", async () => {

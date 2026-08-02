@@ -87,11 +87,16 @@ export function TerminalView({
         // active. Since this component (and its xterm instance) doesn't
         // remount across Stop/Start, that stuck alternate-buffer state
         // would otherwise persist into the next process's output, making
-        // a freshly started Terminal look blank/frozen. Reset whenever a
-        // *new* process actually starts (not on the initial attach, which
-        // would wipe legitimately replayed scrollback instead).
-        if (hasReceivedInitialState && msg.state === "Running") {
-          term.reset();
+        // a freshly started Terminal look blank/frozen.
+        //
+        // `term.reset()` would fix that too, but it wipes the *normal*
+        // buffer's own content along with it — losing everything the
+        // Terminal showed before Stop, unlike switching Projects away and
+        // back (which remounts and replays the daemon's own scrollback).
+        // Only step out of the alternate buffer if it's actually the one
+        // active; the normal buffer's history is never touched.
+        if (hasReceivedInitialState && msg.state === "Running" && term.buffer.active.type === "alternate") {
+          term.write("\x1b[?1049l");
         }
         hasReceivedInitialState = true;
         setState(msg.state);
@@ -223,7 +228,7 @@ export function TerminalView({
           </div>
           <div className="relative min-h-0 flex-1">
             <div className="absolute inset-0 bg-black p-2" data-testid="terminal-view" ref={containerRef} />
-            <div className="scanlines pointer-events-none absolute inset-0" aria-hidden="true" />
+            <div className={`scanlines pointer-events-none absolute inset-0 ${!isRunning ? "bg-gray-700" : ""}`} aria-hidden="true" />
           </div>
         </div>
       </div>

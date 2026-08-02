@@ -10,10 +10,10 @@ type ProjectSidebarProps = {
 };
 
 const projectItemBase =
-  "w-full cursor-pointer rounded-none border-[3px] px-5 py-2.5 text-left font-mono transition-[transform,box-shadow] duration-100";
+  "w-full cursor-pointer rounded-none border-[3px] px-5 py-2.5 text-left font-mono transition-[transform,box-shadow] duration-100 border-ink shadow-[4px_4px_0_var(--color-ink)]";
 const projectItemInactive =
-  "border-transparent bg-transparent text-ink shadow-none hover:-translate-x-0.5 hover:-translate-y-0.5 hover:border-ink hover:bg-surface-container-lowest hover:shadow-[4px_4px_0_var(--color-ink)]";
-const projectItemSelected = "border-ink bg-secondary text-on-secondary shadow-[4px_4px_0_var(--color-ink)]";
+  "bg-transparent text-ink hover:-translate-x-0.5 hover:-translate-y-0.5 hover:bg-surface-variant";
+const projectItemSelected = "bg-secondary text-on-secondary";
 
 export function ProjectSidebar({ projects, selectedProjectId, onSelect, onCreate }: ProjectSidebarProps) {
   const [name, setName] = useState("");
