@@ -201,10 +201,18 @@ async fn handle_message(
                 .unwrap()
                 .values()
                 .filter(|t| t.project_id == project_id)
-                .map(|t| TerminalInfo {
-                    id: t.id.clone(),
-                    name: t.name.clone(),
-                    state: t.state(),
+                .map(|t| {
+                    let cfg = t.config_snapshot();
+                    TerminalInfo {
+                        id: t.id.clone(),
+                        name: cfg.name,
+                        cwd: cfg.cwd,
+                        startup_command: cfg.startup_command,
+                        env_vars: cfg.env_vars,
+                        shell: cfg.shell,
+                        scrollback_lines: cfg.scrollback_lines,
+                        state: t.state(),
+                    }
                 })
                 .collect();
             send(
@@ -245,6 +253,36 @@ async fn handle_message(
                 .insert(id.clone(), handle);
             persist(registry);
             send(writer, &DaemonMessage::Created { terminal_id: id }).await?;
+        }
+        ClientMessage::UpdateTerminal {
+            terminal_id,
+            cwd,
+            name,
+            startup_command,
+            env_vars,
+            shell,
+            scrollback_lines,
+        } => {
+            if let Some(handle) = lookup(registry, &terminal_id) {
+                handle.update_config(
+                    cwd,
+                    name,
+                    startup_command,
+                    env_vars,
+                    shell,
+                    scrollback_lines.unwrap_or(DEFAULT_SCROLLBACK_LINES),
+                );
+                persist(registry);
+                send(writer, &DaemonMessage::TerminalUpdated { terminal_id }).await?;
+            } else {
+                send(
+                    writer,
+                    &DaemonMessage::Error {
+                        message: format!("unknown terminal {terminal_id}"),
+                    },
+                )
+                .await?;
+            }
         }
         ClientMessage::Attach { terminal_id } => {
             let Some(handle) = lookup(registry, &terminal_id) else {

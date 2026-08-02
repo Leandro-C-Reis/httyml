@@ -5,17 +5,34 @@ import "@xterm/xterm/css/xterm.css";
 import {
   attachTerminal,
   decodeBase64,
+  detachTerminal,
   onTerminalOutput,
   resizeTerminal,
   restartTerminal,
   stopTerminal,
   writeTerminal,
   type DaemonMessage,
+  type TerminalInfo,
   type TerminalState,
 } from "../lib/daemon";
+import { IconEdit, IconFolder, IconPlay, IconStop, IconTrash } from "./icons";
+import { TerminalTabBar } from "./TerminalTabBar";
 
 type TerminalViewProps = {
   terminalId: string;
+  name: string;
+  cwd: string;
+  onEdit: () => void;
+  onDelete: () => void;
+  tabs: TerminalInfo[];
+  activeTerminalId: string | null;
+  onSelectTab: (terminalId: string) => void;
+  onAddTab: () => void;
+  // Surfaces a failure that isn't tied to a discrete click the App-level
+  // `runAction` wrapper could catch: attach happens inside this
+  // component's own mount effect, and a failed Stop/Start shouldn't just
+  // silently do nothing — see the "stale connection" bug this fixed.
+  onError: (message: string) => void;
 };
 
 function stateVariant(state: TerminalState): "rodando" | "parado" | "encerrado" {
@@ -30,7 +47,18 @@ function stateLabel(state: TerminalState): string {
   return `encerrado (${state.Encerrado.exit_code})`;
 }
 
-export function TerminalView({ terminalId }: TerminalViewProps) {
+export function TerminalView({
+  terminalId,
+  name,
+  cwd,
+  onEdit,
+  onDelete,
+  tabs,
+  activeTerminalId,
+  onSelectTab,
+  onAddTab,
+  onError,
+}: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<TerminalState>("Rodando");
 
@@ -53,10 +81,25 @@ export function TerminalView({ terminalId }: TerminalViewProps) {
     };
 
     let unlisten: (() => void) | undefined;
-    attachTerminal(terminalId)
-      .then(() => onTerminalOutput(terminalId, handleMessage))
+    let cancelled = false;
+    // Listener goes up BEFORE attaching, not after: attach makes the daemon
+    // start forwarding output almost immediately, and a Tauri event emitted
+    // before any JS-side listener exists is dropped, not queued. Attaching
+    // first left a real (if narrow) window where the initial Scrollback +
+    // StateChanged could arrive and vanish before `onTerminalOutput` ever
+    // subscribed — leaving the Terminal stuck on the `useState("Rodando")`
+    // default with no scrollback and no error, since nothing ever rejected.
+    onTerminalOutput(terminalId, handleMessage)
       .then((fn) => {
+        if (cancelled) {
+          fn();
+          return undefined;
+        }
         unlisten = fn;
+        return attachTerminal(terminalId);
+      })
+      .catch((err) => {
+        onError(err instanceof Error ? err.message : String(err));
       });
 
     const dataDisposable = term.onData((data) => {
@@ -72,9 +115,14 @@ export function TerminalView({ terminalId }: TerminalViewProps) {
     }
 
     return () => {
+      cancelled = true;
       resizeObserver.disconnect();
       dataDisposable.dispose();
       unlisten?.();
+      // Without this, re-mounting this Terminal later (e.g. switching
+      // Projects away and back) hits attach's idempotent no-op and never
+      // gets its scrollback replayed — only new output after that point.
+      void detachTerminal(terminalId);
       term.dispose();
     };
   }, [terminalId]);
@@ -83,32 +131,72 @@ export function TerminalView({ terminalId }: TerminalViewProps) {
 
   return (
     <div className="terminal-panel">
-      <div className="terminal-toolbar">
+      <div className="terminal-context">
+        <h2 className="terminal-context__title">{name}</h2>
         <span
           className={`terminal-status terminal-status--${stateVariant(state)}`}
           data-testid="terminal-status"
         >
           {stateLabel(state)}
         </span>
-        {isRunning ? (
-          <button
-            type="button"
-            className="button--danger"
-            onClick={() => void stopTerminal(terminalId)}
-          >
-            Stop
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="button--success"
-            onClick={() => void restartTerminal(terminalId)}
-          >
-            Restart
-          </button>
-        )}
       </div>
-      <div className="terminal-view" data-testid="terminal-view" ref={containerRef} />
+      <div className="terminal-workspace">
+        <TerminalTabBar
+          terminals={tabs}
+          activeTerminalId={activeTerminalId}
+          onSelect={onSelectTab}
+          onAdd={onAddTab}
+        />
+        <div className="terminal-shell">
+          <div className="terminal-shell__bar">
+            <span className="terminal-shell__path">
+              <IconFolder />
+              {cwd || "~"}
+            </span>
+            <div className="terminal-shell__actions">
+              <button type="button" className="button--neutral" onClick={onEdit}>
+                <IconEdit />
+                Edit
+              </button>
+              {isRunning ? (
+                <button
+                  type="button"
+                  className="button--danger"
+                  onClick={() =>
+                    void stopTerminal(terminalId).catch((err) =>
+                      onError(err instanceof Error ? err.message : String(err)),
+                    )
+                  }
+                >
+                  <IconStop />
+                  Stop
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="button--neutral"
+                  onClick={() =>
+                    void restartTerminal(terminalId).catch((err) =>
+                      onError(err instanceof Error ? err.message : String(err)),
+                    )
+                  }
+                >
+                  <IconPlay />
+                  Start
+                </button>
+              )}
+              <button type="button" className="button--danger" onClick={onDelete}>
+                <IconTrash />
+                Remove
+              </button>
+            </div>
+          </div>
+          <div className="terminal-shell__output-wrap">
+            <div className="terminal-shell__output" data-testid="terminal-view" ref={containerRef} />
+            <div className="terminal-shell__scanlines" aria-hidden="true" />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

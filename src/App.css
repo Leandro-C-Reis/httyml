@@ -1,19 +1,61 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* Without this, the UA default body margin makes the document taller than
+   the viewport at every window size, forcing a permanent scrollbar even
+   though nothing actually overflows .app-root. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
 :root {
-  --nb-primary: #fdc800;
-  --nb-secondary: #432dd7;
-  --nb-success: #16a34a;
-  --nb-warning: #d97706;
-  --nb-danger: #dc2626;
-  --nb-surface: #fbfbf9;
-  --nb-text: #1c293c;
-  --nb-border: 3px solid var(--nb-text);
-  --nb-shadow: 4px 4px 0 var(--nb-text);
+  /* Terminal Core — see .agents/skills/neobrutalism/DESIGN.md */
+  --tc-primary: #4240e5;
+  --tc-on-primary: #ffffff;
+  --tc-secondary: #b6f300;
+  --tc-on-secondary: #1b1b1b;
+  --tc-tertiary: #df0981;
+  --tc-on-tertiary: #ffffff;
+  --tc-error: #ba1a1a;
+  --tc-on-error: #ffffff;
+  --tc-warning: #d97706;
+
+  --tc-surface: #f9f9f9;
+  --tc-surface-container-lowest: #ffffff;
+  --tc-surface-variant: #e2e2e2;
+  --tc-on-surface-variant: #464555;
+  /* Light, ink-safe tint fills for dashboard cards — never used for text. */
+  --tc-primary-fixed: #e1dfff;
+  --tc-tertiary-fixed: #ffd9e3;
+
+  /* Ink is the one border/text/shadow color, and surface is always pure
+     white/off-white — a deliberate single-theme system (per DESIGN.md), not
+     a light variant of a dark-capable one. This is what keeps buttons and
+     cards readable: no theme-driven flip means fixed-color fills (button
+     backgrounds, card surfaces) never end up paired with a foreground
+     color that was tuned for a different background. Do not add a
+     prefers-color-scheme override without also redesigning the palette for
+     it — a partial dark mode is how the previous button-contrast bug
+     happened. */
+  --tc-ink: #1b1b1b;
+  --tc-text: var(--tc-ink);
+
+  --tc-border: 3px solid var(--tc-ink);
+  --tc-border-thick: 4px solid var(--tc-ink);
+  --tc-shadow: 4px 4px 0 var(--tc-ink);
+  --tc-shadow-lg: 8px 8px 0 var(--tc-ink);
 
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
   font-size: 16px;
   line-height: 24px;
-  color: var(--nb-text);
-  background-color: var(--nb-surface);
+  color: var(--tc-text);
+  background-color: var(--tc-surface);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -39,32 +81,75 @@
   justify-content: space-between;
   gap: 12px;
   padding: 10px 16px;
-  background-color: var(--nb-danger);
-  color: #fff;
-  border-bottom: var(--nb-border);
+  background-color: var(--tc-tertiary);
+  color: var(--tc-on-tertiary);
+  border-bottom: var(--tc-border-thick);
   font-family: "JetBrains Mono", monospace;
   font-size: 0.8125rem;
+  font-weight: 700;
 }
 
 .error-banner button {
   background: none;
   border: none;
   box-shadow: none;
-  color: #fff;
+  color: var(--tc-on-tertiary);
   font-size: 1.1em;
   padding: 0 4px;
 }
 
 .project-sidebar {
-  width: 220px;
+  width: 240px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 16px;
-  border-right: var(--nb-border);
-  background: var(--nb-surface);
+  border-right: var(--tc-border-thick);
+  background: var(--tc-surface);
   box-sizing: border-box;
+}
+
+.sidebar-brand {
+  padding-bottom: 12px;
+  border-bottom: var(--tc-border);
+}
+
+.sidebar-brand__mark {
+  display: block;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: 1.25rem;
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+}
+
+.sidebar-brand__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--tc-on-surface-variant);
+}
+
+.sidebar-brand__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tc-secondary);
+  border: 1px solid var(--tc-ink);
+}
+
+.project-sidebar form[aria-label="Create project"] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .project-sidebar ul {
@@ -74,62 +159,115 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-.project-sidebar form[aria-label="Create project"] {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.project-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  flex: 1;
+  overflow-y: auto;
 }
 
 .project-item {
   flex: 1;
   width: 100%;
   text-align: left;
-  background-color: #fff;
+  background-color: transparent;
+  color: var(--tc-ink);
+  border: 3px solid transparent;
   box-shadow: none;
+  font-family: "JetBrains Mono", monospace;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
-.project-item--selected {
-  background-color: var(--nb-primary);
-  box-shadow: var(--nb-shadow);
+.project-item:hover:not(:disabled) {
+  border-color: var(--tc-ink);
+  box-shadow: var(--tc-shadow);
+  transform: translate(-2px, -2px);
+  background-color: var(--tc-surface-container-lowest);
 }
 
-.delete-button {
-  flex-shrink: 0;
-  padding: 4px 8px;
-  line-height: 1;
-  box-shadow: none;
+.project-item--selected,
+.project-item--selected:hover:not(:disabled) {
+  background-color: var(--tc-secondary);
+  color: var(--tc-on-secondary);
+  border-color: var(--tc-ink);
+  box-shadow: var(--tc-shadow);
+  transform: none;
 }
 
+/* Tabs styled as notebook index markers: each sits a little "behind" the
+   active one (translated down), which sits flush with the shell below it —
+   like a divider tab pulled forward out of a stack of cards. */
 .terminal-tab-bar {
   display: flex;
-  gap: 8px;
+  align-items: flex-end;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
-.terminal-tab-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+.tab-add-button {
+  padding: 8px 14px;
+  font-size: 0.75rem;
+  align-self: flex-end;
 }
 
 .terminal-tab {
-  background-color: #fff;
+  position: relative;
+  top: 4px;
+  background-color: var(--tc-surface-container-lowest);
+  color: var(--tc-ink);
+  border: 2px solid var(--tc-ink);
+  border-bottom: none;
   box-shadow: none;
-  padding: 6px 14px;
+  padding: 8px 16px 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  transform: none;
+  transition: background-color 0.1s;
+}
+
+/* Tabs are markers, not buttons: no lift, no hard shadow on hover/press —
+   the button-style "floating CTA" affordance reads wrong for something
+   that's supposed to look physically attached to the shell below it. */
+.terminal-tab:hover:not(:disabled) {
+  background-color: var(--tc-surface-variant);
+  transform: none;
+  box-shadow: none;
+}
+
+.terminal-tab:active:not(:disabled) {
+  transform: none;
+  box-shadow: none;
 }
 
 .terminal-tab--active {
-  background-color: var(--nb-secondary);
-  color: #fff;
-  box-shadow: var(--nb-shadow);
+  top: 0;
+  z-index: 1;
+  background-color: var(--tc-secondary);
+  color: var(--tc-on-secondary);
+  border: 3px solid var(--tc-ink);
+  border-bottom: none;
+  padding: 10px 18px 9px;
+}
+
+.terminal-tab--active:hover:not(:disabled) {
+  background-color: var(--tc-secondary);
+  transform: none;
+  box-shadow: none;
+}
+
+.terminal-workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.terminal-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
 }
 
 .terminal-stack {
@@ -156,19 +294,208 @@
   box-sizing: border-box;
 }
 
-form[aria-label="Create terminal"] {
+.content-header {
+  margin-bottom: 8px;
+}
+
+.content-header__eyebrow {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px;
-  background: var(--nb-surface);
-  border: var(--nb-border);
-  border-radius: 8px;
-  box-shadow: var(--nb-shadow);
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--tc-primary);
+}
+
+.content-header__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tc-secondary);
+  border: 1px solid var(--tc-ink);
+}
+
+.content-header__title {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: 2rem;
+  line-height: 1.2;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+}
+
+.dashboard {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.dashboard__title {
+  margin: 0 0 24px;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: 3rem;
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+}
+
+.dashboard__empty {
+  color: var(--tc-on-surface-variant);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.875rem;
+}
+
+.dashboard__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 24px;
+}
+
+.project-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--tc-surface-container-lowest);
+  border: var(--tc-border-thick);
+  box-shadow: var(--tc-shadow-lg);
+  color: var(--tc-ink);
+}
+
+.project-card--b {
+  background: var(--tc-primary-fixed);
+}
+
+.project-card--c {
+  background: var(--tc-tertiary-fixed);
+}
+
+.project-card__bar {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: var(--tc-border-thick);
+}
+
+.project-card__dot {
+  width: 10px;
+  height: 10px;
+  background: var(--tc-ink);
+}
+
+.project-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   padding: 16px;
 }
 
-form[aria-label="Create terminal"] label {
+.project-card__title {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: 1.5rem;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+}
+
+.configure-page {
+  flex: 1;
+  overflow-y: auto;
+  max-width: 640px;
+}
+
+.configure-page__header {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 4px solid var(--tc-ink);
+}
+
+.configure-page__title {
+  margin: 0 0 4px;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: 2rem;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+}
+
+.configure-page__subtitle {
+  margin: 0;
+  color: var(--tc-on-surface-variant);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8125rem;
+}
+
+.configure-page__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: var(--tc-border-thick);
+}
+
+.configure-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.configure-section__title {
+  display: inline-block;
+  margin: 0;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--tc-ink);
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: 1.25rem;
+  text-transform: uppercase;
+}
+
+.configure-form {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: var(--tc-surface-container-lowest);
+  border: var(--tc-border-thick);
+  box-shadow: var(--tc-shadow-lg);
+  padding: 20px;
+  padding-top: 0;
+}
+
+.terminal-window-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  margin: 0 -20px 4px -20px;
+  padding: 0 16px;
+  background: var(--tc-secondary);
+  border-bottom: var(--tc-border-thick);
+}
+
+.terminal-window-bar__dot {
+  width: 10px;
+  height: 10px;
+  background: var(--tc-on-secondary);
+  flex-shrink: 0;
+}
+
+.terminal-window-bar__label {
+  margin-left: auto;
+  color: var(--tc-on-secondary);
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 700;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+.configure-form label {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -177,16 +504,22 @@ form[aria-label="Create terminal"] label {
   text-transform: uppercase;
 }
 
+.configure-form__label-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 input,
 select,
 textarea {
-  border: var(--nb-border);
-  border-radius: 4px;
+  border: 2px solid var(--tc-ink);
+  border-radius: 0;
   padding: 8px 12px;
   font-size: 1em;
-  font-family: inherit;
-  color: var(--nb-text);
-  background-color: #fff;
+  font-family: "JetBrains Mono", monospace;
+  color: var(--tc-ink);
+  background-color: var(--tc-surface-container-lowest);
   outline: none;
 }
 
@@ -197,13 +530,15 @@ textarea {
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: 3px solid var(--nb-secondary);
+  border-color: var(--tc-primary);
+  box-shadow: 4px 4px 0 var(--tc-primary);
+  outline: 2px solid var(--tc-ink);
   outline-offset: 2px;
 }
 
 .advanced-options {
-  border: var(--nb-border);
-  border-radius: 8px;
+  border: 2px solid var(--tc-ink);
+  border-radius: 0;
   padding: 8px 12px;
 }
 
@@ -213,6 +548,7 @@ textarea:focus-visible {
   font-size: 0.8125rem;
   font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .advanced-options label {
@@ -226,27 +562,33 @@ textarea:focus-visible {
 }
 
 button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   cursor: pointer;
-  border: var(--nb-border);
-  border-radius: 4px;
-  box-shadow: var(--nb-shadow);
+  border: var(--tc-border);
+  border-radius: 0;
+  box-shadow: var(--tc-shadow);
   padding: 10px 20px;
-  font-size: 1em;
+  font-size: 0.875rem;
   font-weight: 700;
-  font-family: inherit;
-  color: var(--nb-text);
-  background-color: var(--nb-primary);
+  font-family: "JetBrains Mono", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--tc-on-primary);
+  background-color: var(--tc-primary);
   transition: transform 0.1s, box-shadow 0.1s;
 }
 
 button:hover:not(:disabled) {
   transform: translate(-2px, -2px);
-  box-shadow: 6px 6px 0 var(--nb-text);
+  box-shadow: 6px 6px 0 var(--tc-ink);
 }
 
 button:active:not(:disabled) {
-  transform: translate(2px, 2px);
-  box-shadow: 1px 1px 0 var(--nb-text);
+  transform: translate(4px, 4px);
+  box-shadow: 0 0 0 var(--tc-ink);
 }
 
 button:disabled {
@@ -256,13 +598,13 @@ button:disabled {
 }
 
 .button--danger {
-  background-color: var(--nb-danger);
-  color: #fff;
+  background-color: var(--tc-error);
+  color: var(--tc-on-error);
 }
 
-.button--success {
-  background-color: var(--nb-success);
-  color: #fff;
+.button--neutral {
+  background-color: var(--tc-surface-container-lowest);
+  color: var(--tc-ink);
 }
 
 .terminal-panel {
@@ -273,55 +615,113 @@ button:disabled {
   min-height: 0;
 }
 
-.terminal-toolbar {
+.terminal-context {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
+.terminal-context__title {
+  margin: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 700;
+  font-size: 1.5rem;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+}
+
 .terminal-status {
   font-family: "JetBrains Mono", monospace;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   font-weight: 700;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   padding: 4px 10px;
-  border: var(--nb-border);
-  border-radius: 4px;
-  color: #fff;
+  border: 2px solid var(--tc-ink);
+  border-radius: 2px;
 }
 
 .terminal-status--rodando {
-  background-color: var(--nb-success);
+  background-color: var(--tc-secondary);
+  color: var(--tc-on-secondary);
 }
 
 .terminal-status--parado {
-  background-color: var(--nb-danger);
+  background-color: var(--tc-error);
+  color: var(--tc-on-error);
 }
 
 .terminal-status--encerrado {
-  background-color: var(--nb-warning);
+  background-color: var(--tc-warning);
+  color: #fff;
 }
 
-.terminal-view {
+.terminal-shell {
   flex: 1;
-  border: var(--nb-border);
-  border-radius: 8px;
-  box-shadow: var(--nb-shadow);
-  background: #000;
-  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: var(--tc-border-thick);
+  box-shadow: var(--tc-shadow-lg);
+  background: var(--tc-surface-container-lowest);
+}
+
+.terminal-shell__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--tc-surface-variant);
+  border-bottom: var(--tc-border-thick);
+}
+
+.terminal-shell__path {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 4px 8px;
+  background: var(--tc-surface-container-lowest);
+  border: 2px solid var(--tc-ink);
+  word-break: break-all;
+}
+
+.terminal-shell__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.terminal-shell__actions button {
+  padding: 6px 12px;
+  font-size: 0.75rem;
+}
+
+.terminal-shell__output-wrap {
+  position: relative;
+  flex: 1;
   min-height: 0;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --nb-surface: #1c293c;
-    --nb-text: #fbfbf9;
-    color: var(--nb-text);
-    background-color: var(--nb-surface);
-  }
+.terminal-shell__output {
+  position: absolute;
+  inset: 0;
+  padding: 8px;
+  background: #000;
+}
 
-  input {
-    background-color: #0f172a;
-    color: var(--nb-text);
-  }
+/* A restrained nod to a CRT — subtle scanlines over the live shell output,
+   never so heavy it fights with reading the terminal itself. */
+.terminal-shell__scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+    linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+  background-size: 100% 4px, 6px 100%;
 }

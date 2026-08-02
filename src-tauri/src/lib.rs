@@ -150,9 +150,40 @@ async fn create_terminal(
     }
 }
 
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+async fn update_terminal(
+    terminal_id: String,
+    cwd: String,
+    name: Option<String>,
+    startup_command: Option<String>,
+    env_vars: HashMap<String, String>,
+    shell: Option<String>,
+    scrollback_lines: Option<usize>,
+) -> Result<(), String> {
+    match send_one(ClientMessage::UpdateTerminal {
+        terminal_id,
+        cwd,
+        name,
+        startup_command,
+        env_vars,
+        shell,
+        scrollback_lines,
+    })
+    .await?
+    {
+        DaemonMessage::TerminalUpdated { .. } => Ok(()),
+        DaemonMessage::Error { message } => Err(message),
+        _ => Err("unexpected response from daemon".to_string()),
+    }
+}
+
 /// Opens a persistent connection to the daemon for this Terminal, forwarding
 /// its Scrollback/Output frames to the frontend as `terminal-output-<id>` events.
-/// Idempotent: attaching an already-attached Terminal is a no-op.
+/// Idempotent: attaching an already-attached Terminal is a no-op — the
+/// caller must `detach_terminal` first if it actually wants a fresh
+/// connection (and the Scrollback replay that comes with one), e.g. when
+/// its own view unmounted without the backend knowing.
 #[tauri::command]
 async fn attach_terminal(
     app: AppHandle,
@@ -269,6 +300,18 @@ async fn restart_terminal(
         .await
 }
 
+/// Tears down an attached Terminal's connection without touching the
+/// Terminal itself — called when its view unmounts (e.g. switching away
+/// from a Project), so a later `attach_terminal` for the same id creates a
+/// genuinely fresh connection instead of hitting the idempotent no-op
+/// below and skipping the daemon's replayed Scrollback. Idempotent: a no-op
+/// if it was never attached, or already detached.
+#[tauri::command]
+async fn detach_terminal(state: State<'_, AttachedTerminals>, terminal_id: String) -> Result<(), String> {
+    state.forget(&terminal_id).await;
+    Ok(())
+}
+
 /// Deletes a Terminal and, if it was attached, tears down that connection
 /// too — otherwise it would idle forever referencing a terminal_id that no
 /// longer exists.
@@ -335,7 +378,9 @@ pub fn run() {
             list_projects,
             list_terminals,
             create_terminal,
+            update_terminal,
             attach_terminal,
+            detach_terminal,
             write_terminal,
             resize_terminal,
             stop_terminal,

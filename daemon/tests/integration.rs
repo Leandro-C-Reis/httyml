@@ -1334,3 +1334,145 @@ async fn reloaded_terminals_never_stream_output_without_an_explicit_attach() {
         .expect_silence(Duration::from_millis(300))
         .await;
 }
+
+#[tokio::test]
+async fn update_terminal_renames_it_and_updates_stored_config_immediately() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: Some("original-name".to_string()),
+            startup_command: None,
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::UpdateTerminal {
+            terminal_id: terminal_id.clone(),
+            cwd: "/var/tmp".to_string(),
+            name: Some("renamed".to_string()),
+            startup_command: Some("echo hi".to_string()),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::TerminalUpdated {
+            terminal_id: updated_id,
+        } => assert_eq!(updated_id, terminal_id),
+        other => panic!("expected TerminalUpdated, got {other:?}"),
+    }
+
+    client
+        .send(&ClientMessage::ListTerminals {
+            project_id: project_id.clone(),
+        })
+        .await;
+    let terminals = match client.recv().await {
+        DaemonMessage::Terminals { terminals, .. } => terminals,
+        other => panic!("expected Terminals, got {other:?}"),
+    };
+
+    let updated = terminals.iter().find(|t| t.id == terminal_id).unwrap();
+    assert_eq!(updated.name.as_deref(), Some("renamed"));
+    assert_eq!(updated.cwd, "/var/tmp");
+    assert_eq!(updated.startup_command.as_deref(), Some("echo hi"));
+}
+
+#[tokio::test]
+async fn update_terminal_config_takes_effect_on_next_restart_not_before() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: None,
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+    client.expect_state(TerminalState::Rodando).await;
+
+    let mut env_vars = std::collections::HashMap::new();
+    env_vars.insert("HTTYML_TEST_VAR".to_string(), "updated-value".to_string());
+    client
+        .send(&ClientMessage::UpdateTerminal {
+            terminal_id: terminal_id.clone(),
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: None,
+            env_vars,
+            shell: None,
+            scrollback_lines: None,
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::TerminalUpdated { .. } => {}
+        other => panic!("expected TerminalUpdated, got {other:?}"),
+    }
+
+    // The already-running process never sees the new env var — it can't be
+    // injected into a live process.
+    client
+        .send(&ClientMessage::Write {
+            terminal_id: terminal_id.clone(),
+            data: STANDARD.encode("echo VAR-IS-[$HTTYML_TEST_VAR]\n"),
+        })
+        .await;
+    client.expect_output_containing("VAR-IS-[]").await;
+
+    client
+        .send(&ClientMessage::Stop {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_state(TerminalState::Parado).await;
+
+    client
+        .send(&ClientMessage::Restart {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_state(TerminalState::Rodando).await;
+
+    client
+        .send(&ClientMessage::Write {
+            terminal_id,
+            data: STANDARD.encode("echo VAR-IS-$HTTYML_TEST_VAR\n"),
+        })
+        .await;
+    client.expect_output_containing("VAR-IS-updated-value").await;
+}

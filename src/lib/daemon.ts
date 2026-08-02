@@ -4,7 +4,20 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 export type TerminalState = "Rodando" | "Parado" | { Encerrado: { exit_code: number } };
 
 export type ProjectInfo = { id: string; name: string };
-export type TerminalInfo = { id: string; name: string | null; state: TerminalState };
+// Field names below match the daemon's actual JSON wire format (Rust struct
+// fields, snake_case — Tauri only camel<->snake-converts `#[tauri::command]`
+// arguments, never arbitrary serde struct fields; see `exit_code` above for
+// the same reason `TerminalState` isn't camelCased either).
+export type TerminalInfo = {
+  id: string;
+  name: string | null;
+  cwd: string;
+  startup_command: string | null;
+  env_vars: Record<string, string>;
+  shell: string | null;
+  scrollback_lines: number;
+  state: TerminalState;
+};
 
 export type DaemonMessage =
   | { type: "Created"; terminal_id: string }
@@ -53,8 +66,31 @@ export async function createTerminal(
   });
 }
 
+export async function updateTerminal(
+  terminalId: string,
+  cwd: string,
+  options: CreateTerminalOptions = {},
+): Promise<void> {
+  await invoke("update_terminal", {
+    terminalId,
+    cwd,
+    name: options.name || null,
+    startupCommand: options.startupCommand || null,
+    envVars: options.envVars ?? {},
+    shell: options.shell || null,
+    scrollbackLines: options.scrollbackLines ?? null,
+  });
+}
+
 export async function attachTerminal(terminalId: string): Promise<void> {
   await invoke("attach_terminal", { terminalId });
+}
+
+// Tears down the attach connection — call this on unmount, or a later
+// attachTerminal() for the same Terminal is a no-op that skips the
+// daemon's replayed scrollback (attach is idempotent by terminal_id).
+export async function detachTerminal(terminalId: string): Promise<void> {
+  await invoke("detach_terminal", { terminalId });
 }
 
 export async function writeTerminal(terminalId: string, data: string): Promise<void> {

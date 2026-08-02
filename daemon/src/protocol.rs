@@ -30,6 +30,21 @@ pub enum ClientMessage {
         #[serde(default)]
         scrollback_lines: Option<usize>,
     },
+    /// Replaces a Terminal's stored config wholesale. `name`/`cwd`/etc. take
+    /// effect for the process only on the next `Restart` — a running
+    /// process can't have its cwd/command/shell/env changed underneath it.
+    UpdateTerminal {
+        terminal_id: String,
+        cwd: String,
+        name: Option<String>,
+        startup_command: Option<String>,
+        #[serde(default)]
+        env_vars: HashMap<String, String>,
+        #[serde(default)]
+        shell: Option<String>,
+        #[serde(default)]
+        scrollback_lines: Option<usize>,
+    },
     Attach {
         terminal_id: String,
     },
@@ -67,11 +82,19 @@ pub struct ProjectInfo {
     pub name: String,
 }
 
-/// A Terminal as listed to the app, scoped to a Project.
+/// A Terminal as listed to the app, scoped to a Project. Carries its full
+/// config (not just id/name/state) so the app can render the cwd chip in
+/// the terminal header and prefill the edit page without a second round
+/// trip.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TerminalInfo {
     pub id: String,
     pub name: Option<String>,
+    pub cwd: String,
+    pub startup_command: Option<String>,
+    pub env_vars: HashMap<String, String>,
+    pub shell: Option<String>,
+    pub scrollback_lines: usize,
     pub state: TerminalState,
 }
 
@@ -91,6 +114,9 @@ pub enum DaemonMessage {
         terminals: Vec<TerminalInfo>,
     },
     Created {
+        terminal_id: String,
+    },
+    TerminalUpdated {
         terminal_id: String,
     },
     /// Sent once, immediately after Attach, with the buffered scrollback.

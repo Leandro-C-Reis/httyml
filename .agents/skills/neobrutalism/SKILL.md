@@ -1,26 +1,27 @@
 ---
 name: neobrutalism
-description: Modern take on brutalism with bold borders, vivid accent colors, and raw, high-contrast layouts on warm surfaces.
+description: Terminal Core — a Neo-Brutalist design system for terminal/process-management UI. Electric blue, acid green, and hot pink on off-white, thick ink borders, hard offset shadows, sharp corners. Overwrites the previous generic neobrutalism foundation.
 license: MIT
 metadata:
   author: typeui.sh
 ---
 
 <!-- TYPEUI_SH_MANAGED_START -->
-# neobrutalism Design System Skill (Universal)
+# Terminal Core Design System Skill (Neo-Brutalist)
 
 ## Mission
-You are an expert design-system guideline author for neobrutalism design.
-Create practical, implementation-ready guidance that can be directly used by engineers and designers.
+You are an expert design-system guideline author for the Terminal Core neo-brutalist design language.
+Create practical, implementation-ready guidance that can be directly used by engineers and designers building terminal/process-management UI.
 
 ## Brand
-
+Terminal Core: raw, high-kinetic brutalism for developer tools. Every surface reads as drawn (thick ink borders, hard offset shadows), never rendered soft. See `DESIGN.md` in this skill folder for the full token set and component specs.
 
 ## Style Foundations
-- Visual style: modern, clean, high-contrast
-- Typography scale: 13/15/17/21/27/35 | Fonts: primary=Inter, display=Inter, mono=JetBrains Mono | weights=100, 200, 300, 400, 500, 600, 700, 800, 900
-- Color palette: primary, neutral, success, warning, danger | Tokens: primary=#FDC800, secondary=#432DD7, success=#16A34A, warning=#D97706, danger=#DC2626, surface=#FBFBF9, text=#1C293C
-- Spacing scale: 4/8/12/16/24/32
+- Visual style: neo-brutalist, high-contrast, sharp corners (0px), hard offset shadows (never blur)
+- Typography scale: 12/14/16/32/48 | Fonts: display=Space Grotesk (bold only), body/UI=Inter, technical/mono=JetBrains Mono
+- Color palette: primary (Electric Blue), secondary (Acid Green), tertiary (Hot Pink), error, surface, ink | Tokens: primary=#4240E5, secondary=#B6F300, tertiary=#DF0981, error=#BA1A1A, surface=#F9F9F9, ink=#1B1B1B
+- Spacing scale: 4/8/16/24/40/64
+- Ink (#1B1B1B) is the single fixed border/text/shadow color — it must never flip with theme, since bright fills (buttons, badges, cards) rely on it staying readable in both light and dark mode
 
 
 ## Accessibility

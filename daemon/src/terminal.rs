@@ -80,6 +80,8 @@ struct LiveProcess {
 #[derive(Debug, Clone)]
 pub struct TerminalConfig {
     pub project_id: String,
+    /// Empty falls back to the Daemon's own `$HOME` (or `/` if that's unset)
+    /// at spawn time — see `start_process`.
     pub cwd: String,
     pub name: Option<String>,
     pub startup_command: Option<String>,
@@ -91,19 +93,16 @@ pub struct TerminalConfig {
     pub scrollback_lines: usize,
 }
 
-/// A PTY-backed Terminal, owned by the Daemon. Its identity (`id`, `cwd`,
+/// A PTY-backed Terminal, owned by the Daemon. Its identity (`id`,
 /// `scrollback`, `tx`) outlives any single process: stopping kills the
 /// process but keeps the config and history; restarting spawns a fresh
-/// process reusing that same config.
+/// process reusing whatever `config` currently holds — which `update_config`
+/// can change in place (see its doc comment for what that does and doesn't
+/// affect immediately).
 pub struct TerminalHandle {
     pub id: String,
     pub project_id: String,
-    pub name: Option<String>,
-    pub cwd: String,
-    startup_command: Option<String>,
-    env_vars: HashMap<String, String>,
-    shell: Option<String>,
-    scrollback_lines: usize,
+    config: Mutex<TerminalConfig>,
     /// Serializes `stop`, `restart`, and `handle_process_exit` against each
     /// other so none of the three can act on a `process`/`state` pair that
     /// another one is concurrently changing.
@@ -124,28 +123,15 @@ impl TerminalHandle {
     /// immediately, for quick-create) and `reload` (which doesn't, since a
     /// reloaded Terminal's previous process is long gone).
     fn build(id: String, config: TerminalConfig) -> Arc<TerminalHandle> {
-        let TerminalConfig {
-            project_id,
-            cwd,
-            name,
-            startup_command,
-            env_vars,
-            shell,
-            scrollback_lines,
-        } = config;
-        let scrollback = Arc::new(Mutex::new(Scrollback::new(scrollback_lines)));
+        let project_id = config.project_id.clone();
+        let scrollback = Arc::new(Mutex::new(Scrollback::new(config.scrollback_lines)));
         let (tx, _rx) = broadcast::channel(1024);
         let (state_tx, _rx) = broadcast::channel(16);
 
         Arc::new(TerminalHandle {
             id,
             project_id,
-            name,
-            cwd,
-            startup_command,
-            env_vars,
-            shell,
-            scrollback_lines,
+            config: Mutex::new(config),
             lifecycle: Mutex::new(()),
             generation: AtomicU64::new(0),
             process: Mutex::new(None),
@@ -175,17 +161,33 @@ impl TerminalHandle {
         *self.state.lock().unwrap()
     }
 
-    /// Snapshots this Terminal's current config, e.g. to persist to disk.
+    /// Snapshots this Terminal's current config, e.g. to persist to disk or
+    /// to prefill the edit page.
     pub fn config_snapshot(&self) -> TerminalConfig {
-        TerminalConfig {
-            project_id: self.project_id.clone(),
-            cwd: self.cwd.clone(),
-            name: self.name.clone(),
-            startup_command: self.startup_command.clone(),
-            env_vars: self.env_vars.clone(),
-            shell: self.shell.clone(),
-            scrollback_lines: self.scrollback_lines,
-        }
+        self.config.lock().unwrap().clone()
+    }
+
+    /// Replaces the stored config wholesale (`id`/`project_id` are identity,
+    /// not config, and stay fixed). `name` is metadata and applies
+    /// immediately; `cwd`/`startup_command`/`env_vars`/`shell` only affect a
+    /// running process on its next `restart` — they can't be changed
+    /// underneath an already-spawned process.
+    pub fn update_config(
+        &self,
+        cwd: String,
+        name: Option<String>,
+        startup_command: Option<String>,
+        env_vars: HashMap<String, String>,
+        shell: Option<String>,
+        scrollback_lines: usize,
+    ) {
+        let mut cfg = self.config.lock().unwrap();
+        cfg.cwd = cwd;
+        cfg.name = name;
+        cfg.startup_command = startup_command;
+        cfg.env_vars = env_vars;
+        cfg.shell = shell;
+        cfg.scrollback_lines = scrollback_lines;
     }
 
     /// Snapshots the scrollback, current state, and subscribes to both live
@@ -212,6 +214,10 @@ impl TerminalHandle {
     }
 
     fn start_process(self: &Arc<Self>) -> anyhow::Result<()> {
+        // Cloned up front so the PTY spawn below doesn't run with the config
+        // lock held — `update_config` must never block on a slow spawn.
+        let cfg = self.config.lock().unwrap().clone();
+
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {
             rows: 24,
@@ -220,7 +226,7 @@ impl TerminalHandle {
             pixel_height: 0,
         })?;
 
-        let shell = self
+        let shell = cfg
             .shell
             .as_deref()
             .filter(|s| !s.is_empty())
@@ -228,8 +234,13 @@ impl TerminalHandle {
             .or_else(|| std::env::var("SHELL").ok())
             .unwrap_or_else(|| "/bin/sh".to_string());
         let mut cmd = CommandBuilder::new(shell);
-        cmd.cwd(&self.cwd);
-        for (key, value) in &self.env_vars {
+        let cwd = if cfg.cwd.is_empty() {
+            std::env::var("HOME").unwrap_or_else(|_| "/".to_string())
+        } else {
+            cfg.cwd.clone()
+        };
+        cmd.cwd(&cwd);
+        for (key, value) in &cfg.env_vars {
             cmd.env(key, value);
         }
 
@@ -237,7 +248,7 @@ impl TerminalHandle {
         drop(pair.slave);
 
         let mut writer = pair.master.take_writer()?;
-        if let Some(startup) = &self.startup_command {
+        if let Some(startup) = &cfg.startup_command {
             writer.write_all(startup.as_bytes())?;
             writer.write_all(b"\n")?;
         }
