@@ -1,727 +1,112 @@
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
+@import "tailwindcss";
 
-/* Without this, the UA default body margin makes the document taller than
-   the viewport at every window size, forcing a permanent scrollbar even
-   though nothing actually overflows .app-root. */
-html,
-body,
-#root {
-  height: 100%;
-  margin: 0;
-}
+/* Terminal Core design tokens — see .agents/skills/neobrutalism/DESIGN.md.
+   Every color below becomes a full Tailwind utility set automatically
+   (bg-primary, text-primary, border-primary, ...) because Tailwind v4 reads
+   any --color-* custom property under @theme as a color token. */
+@theme {
+  --color-primary: #4240e5;
+  --color-on-primary: #ffffff;
+  --color-secondary: #b6f300;
+  --color-on-secondary: #1b1b1b;
+  --color-tertiary: #df0981;
+  --color-on-tertiary: #ffffff;
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-warning: #d97706;
 
-:root {
-  /* Terminal Core — see .agents/skills/neobrutalism/DESIGN.md */
-  --tc-primary: #4240e5;
-  --tc-on-primary: #ffffff;
-  --tc-secondary: #b6f300;
-  --tc-on-secondary: #1b1b1b;
-  --tc-tertiary: #df0981;
-  --tc-on-tertiary: #ffffff;
-  --tc-error: #ba1a1a;
-  --tc-on-error: #ffffff;
-  --tc-warning: #d97706;
-
-  --tc-surface: #f9f9f9;
-  --tc-surface-container-lowest: #ffffff;
-  --tc-surface-variant: #e2e2e2;
-  --tc-on-surface-variant: #464555;
+  --color-surface: #f9f9f9;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-variant: #e2e2e2;
+  --color-on-surface-variant: #464555;
   /* Light, ink-safe tint fills for dashboard cards — never used for text. */
-  --tc-primary-fixed: #e1dfff;
-  --tc-tertiary-fixed: #ffd9e3;
-
-  /* Ink is the one border/text/shadow color, and surface is always pure
-     white/off-white — a deliberate single-theme system (per DESIGN.md), not
-     a light variant of a dark-capable one. This is what keeps buttons and
-     cards readable: no theme-driven flip means fixed-color fills (button
-     backgrounds, card surfaces) never end up paired with a foreground
-     color that was tuned for a different background. Do not add a
-     prefers-color-scheme override without also redesigning the palette for
-     it — a partial dark mode is how the previous button-contrast bug
-     happened. */
-  --tc-ink: #1b1b1b;
-  --tc-text: var(--tc-ink);
-
-  --tc-border: 3px solid var(--tc-ink);
-  --tc-border-thick: 4px solid var(--tc-ink);
-  --tc-shadow: 4px 4px 0 var(--tc-ink);
-  --tc-shadow-lg: 8px 8px 0 var(--tc-ink);
-
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  color: var(--tc-text);
-  background-color: var(--tc-surface);
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-.app-root {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-}
-
-.app-shell {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-}
-
-.error-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 16px;
-  background-color: var(--tc-tertiary);
-  color: var(--tc-on-tertiary);
-  border-bottom: var(--tc-border-thick);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.8125rem;
-  font-weight: 700;
-}
-
-.error-banner button {
-  background: none;
-  border: none;
-  box-shadow: none;
-  color: var(--tc-on-tertiary);
-  font-size: 1.1em;
-  padding: 0 4px;
-}
-
-.project-sidebar {
-  width: 240px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px;
-  border-right: var(--tc-border-thick);
-  background: var(--tc-surface);
-  box-sizing: border-box;
-}
-
-.sidebar-brand {
-  padding-bottom: 12px;
-  border-bottom: var(--tc-border);
-}
-
-.sidebar-brand__mark {
-  display: block;
-  font-family: "Space Grotesk", sans-serif;
-  font-weight: 700;
-  font-size: 1.25rem;
-  line-height: 1.1;
-  text-transform: uppercase;
-  letter-spacing: -0.02em;
-}
-
-.sidebar-brand__status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--tc-on-surface-variant);
-}
-
-.sidebar-brand__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--tc-secondary);
-  border: 1px solid var(--tc-ink);
-}
-
-.project-sidebar form[aria-label="Create project"] {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.project-sidebar ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  flex: 1;
-  overflow-y: auto;
-}
-
-.project-item {
-  flex: 1;
-  width: 100%;
-  text-align: left;
-  background-color: transparent;
-  color: var(--tc-ink);
-  border: 3px solid transparent;
-  box-shadow: none;
-  font-family: "JetBrains Mono", monospace;
-  text-transform: none;
-  letter-spacing: normal;
-}
-
-.project-item:hover:not(:disabled) {
-  border-color: var(--tc-ink);
-  box-shadow: var(--tc-shadow);
-  transform: translate(-2px, -2px);
-  background-color: var(--tc-surface-container-lowest);
-}
-
-.project-item--selected,
-.project-item--selected:hover:not(:disabled) {
-  background-color: var(--tc-secondary);
-  color: var(--tc-on-secondary);
-  border-color: var(--tc-ink);
-  box-shadow: var(--tc-shadow);
-  transform: none;
-}
-
-/* Tabs styled as notebook index markers: each sits a little "behind" the
-   active one (translated down), which sits flush with the shell below it —
-   like a divider tab pulled forward out of a stack of cards. */
-.terminal-tab-bar {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.tab-add-button {
-  padding: 8px 14px;
-  font-size: 0.75rem;
-  align-self: flex-end;
-}
-
-.terminal-tab {
-  position: relative;
-  top: 4px;
-  background-color: var(--tc-surface-container-lowest);
-  color: var(--tc-ink);
-  border: 2px solid var(--tc-ink);
-  border-bottom: none;
-  box-shadow: none;
-  padding: 8px 16px 6px;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.8125rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  transform: none;
-  transition: background-color 0.1s;
-}
-
-/* Tabs are markers, not buttons: no lift, no hard shadow on hover/press —
-   the button-style "floating CTA" affordance reads wrong for something
-   that's supposed to look physically attached to the shell below it. */
-.terminal-tab:hover:not(:disabled) {
-  background-color: var(--tc-surface-variant);
-  transform: none;
-  box-shadow: none;
-}
-
-.terminal-tab:active:not(:disabled) {
-  transform: none;
-  box-shadow: none;
-}
-
-.terminal-tab--active {
-  top: 0;
-  z-index: 1;
-  background-color: var(--tc-secondary);
-  color: var(--tc-on-secondary);
-  border: 3px solid var(--tc-ink);
-  border-bottom: none;
-  padding: 10px 18px 9px;
-}
-
-.terminal-tab--active:hover:not(:disabled) {
-  background-color: var(--tc-secondary);
-  transform: none;
-  box-shadow: none;
-}
-
-.terminal-workspace {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
-.terminal-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.terminal-stack {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.terminal-stack-item {
-  flex: 1;
-  display: flex;
-  min-height: 0;
-}
-
-.container {
-  flex: 1;
-  margin: 0;
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-height: 0;
-  box-sizing: border-box;
-}
-
-.content-header {
-  margin-bottom: 8px;
-}
-
-.content-header__eyebrow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 4px;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--tc-primary);
-}
-
-.content-header__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--tc-secondary);
-  border: 1px solid var(--tc-ink);
-}
-
-.content-header__title {
-  margin: 0;
-  font-family: "Space Grotesk", sans-serif;
-  font-weight: 700;
-  font-size: 2rem;
-  line-height: 1.2;
-  text-transform: uppercase;
-  letter-spacing: -0.02em;
-}
-
-.dashboard {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.dashboard__title {
-  margin: 0 0 24px;
-  font-family: "Space Grotesk", sans-serif;
-  font-weight: 700;
-  font-size: 3rem;
-  line-height: 1.1;
-  text-transform: uppercase;
-  letter-spacing: -0.02em;
-}
-
-.dashboard__empty {
-  color: var(--tc-on-surface-variant);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.875rem;
-}
-
-.dashboard__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 24px;
-}
-
-.project-card {
-  display: flex;
-  flex-direction: column;
-  background: var(--tc-surface-container-lowest);
-  border: var(--tc-border-thick);
-  box-shadow: var(--tc-shadow-lg);
-  color: var(--tc-ink);
-}
-
-.project-card--b {
-  background: var(--tc-primary-fixed);
-}
-
-.project-card--c {
-  background: var(--tc-tertiary-fixed);
-}
-
-.project-card__bar {
-  display: flex;
-  gap: 6px;
-  padding: 10px 12px;
-  border-bottom: var(--tc-border-thick);
-}
-
-.project-card__dot {
-  width: 10px;
-  height: 10px;
-  background: var(--tc-ink);
-}
-
-.project-card__body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px;
-}
-
-.project-card__title {
-  margin: 0;
-  font-family: "Space Grotesk", sans-serif;
-  font-weight: 700;
-  font-size: 1.5rem;
-  text-transform: uppercase;
-  letter-spacing: -0.02em;
-}
-
-.configure-page {
-  flex: 1;
-  overflow-y: auto;
-  max-width: 640px;
-}
-
-.configure-page__header {
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 4px solid var(--tc-ink);
-}
-
-.configure-page__title {
-  margin: 0 0 4px;
-  font-family: "Space Grotesk", sans-serif;
-  font-weight: 700;
-  font-size: 2rem;
-  text-transform: uppercase;
-  letter-spacing: -0.02em;
-}
-
-.configure-page__subtitle {
-  margin: 0;
-  color: var(--tc-on-surface-variant);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.8125rem;
-}
-
-.configure-page__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding-top: 16px;
-  border-top: var(--tc-border-thick);
-}
-
-.configure-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.configure-section__title {
-  display: inline-block;
-  margin: 0;
-  padding-bottom: 6px;
-  border-bottom: 2px solid var(--tc-ink);
-  font-family: "Space Grotesk", sans-serif;
-  font-weight: 700;
-  font-size: 1.25rem;
-  text-transform: uppercase;
-}
-
-.configure-form {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  background: var(--tc-surface-container-lowest);
-  border: var(--tc-border-thick);
-  box-shadow: var(--tc-shadow-lg);
-  padding: 20px;
-  padding-top: 0;
-}
-
-.terminal-window-bar {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  margin: 0 -20px 4px -20px;
-  padding: 0 16px;
-  background: var(--tc-secondary);
-  border-bottom: var(--tc-border-thick);
-}
-
-.terminal-window-bar__dot {
-  width: 10px;
-  height: 10px;
-  background: var(--tc-on-secondary);
-  flex-shrink: 0;
-}
-
-.terminal-window-bar__label {
-  margin-left: auto;
-  color: var(--tc-on-secondary);
-  font-family: "JetBrains Mono", monospace;
-  font-weight: 700;
-  font-size: 0.75rem;
-  letter-spacing: 0.05em;
-}
-
-.configure-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.8125rem;
-  text-transform: uppercase;
-}
-
-.configure-form__label-with-icon {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-input,
-select,
-textarea {
-  border: 2px solid var(--tc-ink);
-  border-radius: 0;
-  padding: 8px 12px;
-  font-size: 1em;
-  font-family: "JetBrains Mono", monospace;
-  color: var(--tc-ink);
-  background-color: var(--tc-surface-container-lowest);
-  outline: none;
-}
-
-textarea {
-  resize: vertical;
-}
-
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-  border-color: var(--tc-primary);
-  box-shadow: 4px 4px 0 var(--tc-primary);
-  outline: 2px solid var(--tc-ink);
-  outline-offset: 2px;
-}
-
-.advanced-options {
-  border: 2px solid var(--tc-ink);
-  border-radius: 0;
-  padding: 8px 12px;
-}
-
-.advanced-options summary {
-  cursor: pointer;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.8125rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.advanced-options label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 8px;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.8125rem;
-  text-transform: uppercase;
-}
-
-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  cursor: pointer;
-  border: var(--tc-border);
-  border-radius: 0;
-  box-shadow: var(--tc-shadow);
-  padding: 10px 20px;
-  font-size: 0.875rem;
-  font-weight: 700;
-  font-family: "JetBrains Mono", monospace;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--tc-on-primary);
-  background-color: var(--tc-primary);
-  transition: transform 0.1s, box-shadow 0.1s;
-}
-
-button:hover:not(:disabled) {
-  transform: translate(-2px, -2px);
-  box-shadow: 6px 6px 0 var(--tc-ink);
-}
-
-button:active:not(:disabled) {
-  transform: translate(4px, 4px);
-  box-shadow: 0 0 0 var(--tc-ink);
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-  box-shadow: none;
-}
-
-.button--danger {
-  background-color: var(--tc-error);
-  color: var(--tc-on-error);
-}
-
-.button--neutral {
-  background-color: var(--tc-surface-container-lowest);
-  color: var(--tc-ink);
-}
-
-.terminal-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 0;
-}
-
-.terminal-context {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.terminal-context__title {
-  margin: 0;
-  font-family: "Space Grotesk", sans-serif;
-  font-weight: 700;
-  font-size: 1.5rem;
-  text-transform: uppercase;
-  letter-spacing: -0.02em;
-}
-
-.terminal-status {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  padding: 4px 10px;
-  border: 2px solid var(--tc-ink);
-  border-radius: 2px;
-}
-
-.terminal-status--rodando {
-  background-color: var(--tc-secondary);
-  color: var(--tc-on-secondary);
-}
-
-.terminal-status--parado {
-  background-color: var(--tc-error);
-  color: var(--tc-on-error);
-}
-
-.terminal-status--encerrado {
-  background-color: var(--tc-warning);
-  color: #fff;
-}
-
-.terminal-shell {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  border: var(--tc-border-thick);
-  box-shadow: var(--tc-shadow-lg);
-  background: var(--tc-surface-container-lowest);
-}
-
-.terminal-shell__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 8px 12px;
-  background: var(--tc-surface-variant);
-  border-bottom: var(--tc-border-thick);
-}
-
-.terminal-shell__path {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  padding: 4px 8px;
-  background: var(--tc-surface-container-lowest);
-  border: 2px solid var(--tc-ink);
-  word-break: break-all;
-}
-
-.terminal-shell__actions {
-  display: flex;
-  gap: 8px;
-}
-
-.terminal-shell__actions button {
-  padding: 6px 12px;
-  font-size: 0.75rem;
-}
-
-.terminal-shell__output-wrap {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-}
-
-.terminal-shell__output {
-  position: absolute;
-  inset: 0;
-  padding: 8px;
-  background: #000;
-}
-
-/* A restrained nod to a CRT — subtle scanlines over the live shell output,
-   never so heavy it fights with reading the terminal itself. */
-.terminal-shell__scanlines {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
-    linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-  background-size: 100% 4px, 6px 100%;
+  --color-primary-fixed: #e1dfff;
+  --color-tertiary-fixed: #ffd9e3;
+
+  /* The one border/text/shadow color, fixed regardless of surface — see the
+     "Ink" note in DESIGN.md. Never make this theme-dependent: fixed-color
+     fills (button backgrounds, card surfaces) rely on a foreground that
+     never flips underneath them. */
+  --color-ink: #1b1b1b;
+
+  --font-display: "Space Grotesk", sans-serif;
+  --font-sans: Inter, Avenir, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+@layer base {
+  /* Without this, the UA default body margin makes the document taller
+     than the viewport at every window size, forcing a permanent scrollbar
+     even though nothing actually overflows #app-root. */
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    @apply bg-surface text-ink font-sans antialiased;
+  }
+}
+
+/* Composite recipes reused across many components — everything else is
+   styled with inline utilities directly in JSX. Extracted here only where
+   the exact same multi-property pattern repeats (buttons, tabs, cards,
+   form fields, status chips), per Tailwind's own guidance on @layer
+   components. */
+@layer components {
+  .btn {
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-none border-[3px] border-ink bg-primary px-5 py-2.5 font-mono text-sm font-bold tracking-wide text-on-primary uppercase shadow-[4px_4px_0_var(--color-ink)] transition-[transform,box-shadow] duration-100;
+  }
+  .btn:disabled {
+    @apply cursor-not-allowed opacity-50 shadow-none;
+  }
+  .btn:enabled:hover {
+    @apply -translate-x-0.5 -translate-y-0.5 shadow-[6px_6px_0_var(--color-ink)];
+  }
+  .btn:enabled:active {
+    @apply translate-x-1 translate-y-1 shadow-none;
+  }
+
+  .field {
+    @apply rounded-none border-2 border-ink bg-surface-container-lowest px-3 py-2 font-mono text-base text-ink outline-none;
+  }
+  .field:focus-visible {
+    @apply border-primary shadow-[4px_4px_0_var(--color-primary)] outline-2 outline-ink outline-offset-2;
+  }
+
+  .card {
+    @apply border-[4px] border-ink bg-surface-container-lowest text-ink shadow-[8px_8px_0_var(--color-ink)];
+  }
+
+  .status-chip {
+    @apply rounded-sm border-2 border-ink px-2.5 py-1 font-mono text-xs font-bold tracking-wide uppercase;
+  }
+
+  /* Tabs are markers, not buttons: no lift, no hard shadow on hover/press —
+     the button-style "floating CTA" affordance reads wrong for something
+     meant to look physically attached to the shell below it. Each inactive
+     tab sits a little "behind" (translated down); the active one sits
+     flush with the shell, like a divider tab pulled forward out of a stack
+     of cards. */
+  .tab {
+    @apply relative top-1 border-2 border-b-0 border-ink bg-surface-container-lowest px-4 pt-2 pb-1.5 font-mono text-sm font-bold tracking-wide text-ink uppercase transition-colors duration-100;
+  }
+  .tab:hover {
+    @apply bg-surface-variant;
+  }
+  .tab--active,
+  .tab--active:hover {
+    @apply top-0 z-10 border-[3px] border-b-0 bg-secondary px-[18px] pt-2.5 pb-2 text-on-secondary;
+  }
+
+  /* A restrained nod to a CRT over the live shell output — the two-layer
+     gradient isn't expressible as a one-off utility, so it stays real CSS. */
+  .scanlines {
+    background:
+      linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+      linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+    background-size: 100% 4px, 6px 100%;
+  }
 }

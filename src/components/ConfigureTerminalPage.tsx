@@ -20,6 +20,8 @@ type ConfigureTerminalPageProps = {
   onSubmit: (cwd: string, options: CreateTerminalOptions) => void;
 };
 
+const fieldLabel = "flex flex-col gap-1 font-mono text-sm uppercase";
+
 function parseEnvVars(text: string): Record<string, string> {
   const envVars: Record<string, string> = {};
   for (const line of text.split("\n")) {
@@ -71,41 +73,57 @@ export function ConfigureTerminalPage({
   const isEdit = mode === "edit";
 
   return (
-    <div className="configure-page">
-      <div className="configure-page__header">
-        <h1 className="configure-page__title">{isEdit ? "Edit Terminal" : "Configure Terminal"}</h1>
-        <p className="configure-page__subtitle">
+    <div className="max-w-[640px] flex-1 overflow-y-auto">
+      <div className="mb-4 border-b-[4px] border-ink pb-3">
+        <h1 className="m-0 mb-1 font-display text-[2rem] font-bold tracking-tight uppercase">
+          {isEdit ? "Edit Terminal" : "Configure Terminal"}
+        </h1>
+        <p className="m-0 font-mono text-sm text-on-surface-variant">
           {isEdit
             ? "Update this terminal's info. Directory, command, shell and env changes apply on next restart."
             : "Set up execution parameters for a new terminal."}
         </p>
       </div>
-      <form onSubmit={handleSubmit} aria-label={isEdit ? "Edit terminal" : "Create terminal"} className="configure-form">
-        <div className="terminal-window-bar">
-          <span className="terminal-window-bar__dot" />
-          <span className="terminal-window-bar__dot" />
-          <span className="terminal-window-bar__dot" />
-          <span className="terminal-window-bar__label">TTY1</span>
+      <form
+        onSubmit={handleSubmit}
+        aria-label={isEdit ? "Edit terminal" : "Create terminal"}
+        className="card relative flex flex-col gap-5 p-5 pt-0"
+      >
+        <div className="-mx-5 mb-1 flex h-8 shrink-0 items-center gap-1.5 border-b-[4px] border-ink bg-secondary px-4">
+          <span className="h-2.5 w-2.5 shrink-0 bg-on-secondary" />
+          <span className="h-2.5 w-2.5 shrink-0 bg-on-secondary" />
+          <span className="h-2.5 w-2.5 shrink-0 bg-on-secondary" />
+          <span className="ml-auto font-mono text-xs font-bold tracking-wide text-on-secondary">TTY1</span>
         </div>
-        <section className="configure-section">
-          <h2 className="configure-section__title">01. Identity</h2>
-          <label>
+        <section className="flex flex-col gap-3">
+          <h2 className="m-0 inline-block w-fit border-b-2 border-ink pb-1.5 font-display text-xl font-bold uppercase">
+            01. Identity
+          </h2>
+          <label className={fieldLabel}>
             Name (optional)
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder={defaultName} />
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={defaultName}
+              className="field w-full"
+            />
           </label>
         </section>
-        <section className="configure-section">
-          <h2 className="configure-section__title">02. Execution</h2>
-          <label>
+        <section className="flex flex-col gap-3">
+          <h2 className="m-0 inline-block w-fit border-b-2 border-ink pb-1.5 font-display text-xl font-bold uppercase">
+            02. Execution
+          </h2>
+          <label className={fieldLabel}>
             Startup command (optional)
             <input
               value={startupCommand}
               onChange={(e) => setStartupCommand(e.target.value)}
               placeholder="npm run dev"
+              className="field w-full"
             />
           </label>
-          <label>
-            <span className="configure-form__label-with-icon">
+          <label className={fieldLabel}>
+            <span className="inline-flex items-center gap-1.5">
               <IconFolder />
               Directory (optional — defaults to home)
             </span>
@@ -113,30 +131,34 @@ export function ConfigureTerminalPage({
               value={cwd}
               onChange={(e) => setCwd(e.target.value)}
               placeholder="/path/to/project"
+              className="field w-full"
             />
           </label>
         </section>
-        <details className="advanced-options">
-          <summary>Advanced</summary>
-          <label>
+        <details className="border-2 border-ink p-3">
+          <summary className="cursor-pointer font-mono text-sm font-bold tracking-wide uppercase">
+            Advanced
+          </summary>
+          <label className={`${fieldLabel} mt-2`}>
             Shell (optional)
-            <select value={shell} onChange={(e) => setShell(e.target.value)}>
+            <select value={shell} onChange={(e) => setShell(e.target.value)} className="field w-full">
               <option value="">Default</option>
               <option value="bash">bash</option>
               <option value="zsh">zsh</option>
               <option value="fish">fish</option>
             </select>
           </label>
-          <label>
+          <label className={`${fieldLabel} mt-2`}>
             Environment variables (optional)
             <textarea
               value={envVarsText}
               onChange={(e) => setEnvVarsText(e.target.value)}
               placeholder={"NODE_ENV=development\nDEBUG=true"}
               rows={3}
+              className="field w-full resize-y"
             />
           </label>
-          <label>
+          <label className={`${fieldLabel} mt-2`}>
             Scrollback line limit (optional)
             <input
               type="number"
@@ -144,15 +166,16 @@ export function ConfigureTerminalPage({
               value={scrollbackLines}
               onChange={(e) => setScrollbackLines(e.target.value)}
               placeholder="10000"
+              className="field w-full"
             />
           </label>
         </details>
-        <div className="configure-page__actions">
-          <button type="button" className="button--neutral" onClick={onCancel}>
+        <div className="flex justify-end gap-3 border-t-[4px] border-ink pt-4">
+          <button type="button" className="btn bg-surface-container-lowest text-ink" onClick={onCancel}>
             <IconX />
             Cancel
           </button>
-          <button type="submit">
+          <button type="submit" className="btn">
             <IconCheck />
             {isEdit ? "Save changes" : "Create terminal"}
           </button>

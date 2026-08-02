@@ -184,7 +184,7 @@ describe("TerminalView", () => {
     const status = screen.getByTestId("terminal-status");
     expect(status).toHaveTextContent(/encerrado/i);
     expect(status).toHaveTextContent("7");
-    expect(status.className).toContain("terminal-status--encerrado");
+    expect(status).toHaveAttribute("data-state", "encerrado");
 
     const startButton = screen.getByRole("button", { name: /start/i });
     await userEvent.click(startButton);

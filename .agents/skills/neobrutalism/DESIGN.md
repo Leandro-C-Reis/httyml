@@ -9,12 +9,14 @@ colors:
   on-tertiary: "#FFFFFF"
   error: "#BA1A1A"
   on-error: "#FFFFFF"
+  warning: "#D97706"
   surface: "#F9F9F9"
-  surface-container: "#EEEEEE"
-  surface-container-high: "#E8E8E8"
-  surface-container-highest: "#E2E2E2"
-  ink: "#1B1B1B"
+  surface-container-lowest: "#FFFFFF"
+  surface-variant: "#E2E2E2"
   on-surface-variant: "#464555"
+  primary-fixed: "#E1DFFF"
+  tertiary-fixed: "#FFD9E3"
+  ink: "#1B1B1B"
 typography:
   display-lg:
     fontFamily: "Space Grotesk"
@@ -135,5 +137,14 @@ spacing:
 - Small rectangles, 2px border, `label-caps` text, solid bright fill: acid green = running/live, error red = stopped/failed, hot pink or amber = exited/attention.
 
 ### Tabs / Nav
-- Active: acid green (nav) or electric blue (content tabs) fill, ink border, hard shadow, ink or white text as contrast demands.
-- Inactive: transparent fill, transparent border; on hover, border and shadow appear (border materializes rather than fading in) — reinforces "everything is drawn," nothing is a soft state change.
+- Active: acid green fill (nav item or content tab alike — one active color across the system, not one per context), ink border, ink text. No hard shadow: tabs are markers, not buttons — they read as physically attached to the shell/content below, not floating above the page.
+- Inactive: transparent fill, transparent border; on hover the border/shadow-free background just shifts to a light tint (surface-variant) — no lift, no shadow, so hover never reads as the button affordance.
+
+## Implementation
+
+- **Default to Tailwind CSS utility classes** in JSX (`className="..."`) — this is a Tailwind v4 project (`@tailwindcss/vite`), not hand-written component CSS. Do not add new rules to `App.css` for a single component; express layout, spacing, color, and typography as utilities on the element itself.
+- **Theme tokens live in `src/App.css`'s `@theme` block** and are consumed as ordinary Tailwind utilities — `bg-primary`, `text-on-primary`, `border-ink`, `bg-surface-variant`, `font-display`, `font-mono`, etc. Never hardcode a hex value in a component; if a token you need doesn't exist yet, add it to `@theme` first.
+- **Hard shadows and thick borders are arbitrary values**, e.g. `shadow-[4px_4px_0_var(--color-ink)]`, `border-[3px]` — Tailwind's default border/shadow scales don't cover this system's offsets, and that's expected; arbitrary values are the correct tool here, not a workaround.
+- **`rounded-none`** everywhere sharp corners are required (which is everywhere except the 2px badge exception above).
+- **Extract to `@layer components` only for genuinely repeated multi-property recipes** — buttons (`.btn`), tabs (`.tab`/`.tab--active`), form fields (`.field`), cards/windows (`.card`), status chips (`.status-chip`) already exist there; reuse them rather than re-deriving the recipe inline. Everything else (one-off layout, spacing, a single component's unique structure) stays as inline utilities in JSX — don't grow `@layer components` for something used once.
+- **Utilities always win over `@layer components`** regardless of class order (Tailwind's layer order is base → components → utilities), so a variant like `bg-error text-on-error` can safely follow `.btn` in the same `className` string to override its default fill.

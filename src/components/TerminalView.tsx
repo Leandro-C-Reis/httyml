@@ -128,40 +128,48 @@ export function TerminalView({
   }, [terminalId]);
 
   const isRunning = state === "Rodando";
+  const statusColor =
+    stateVariant(state) === "rodando"
+      ? "bg-secondary text-on-secondary"
+      : stateVariant(state) === "parado"
+        ? "bg-error text-on-error"
+        : "bg-warning text-white";
+  const actionBtn = "btn px-3 py-1.5 text-xs";
 
   return (
-    <div className="terminal-panel">
-      <div className="terminal-context">
-        <h2 className="terminal-context__title">{name}</h2>
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <div className="flex items-center gap-3">
+        <h2 className="m-0 font-display text-2xl font-bold tracking-tight uppercase">{name}</h2>
         <span
-          className={`terminal-status terminal-status--${stateVariant(state)}`}
           data-testid="terminal-status"
+          data-state={stateVariant(state)}
+          className={`status-chip ${statusColor}`}
         >
           {stateLabel(state)}
         </span>
       </div>
-      <div className="terminal-workspace">
+      <div className="flex min-h-0 flex-1 flex-col">
         <TerminalTabBar
           terminals={tabs}
           activeTerminalId={activeTerminalId}
           onSelect={onSelectTab}
           onAdd={onAddTab}
         />
-        <div className="terminal-shell">
-          <div className="terminal-shell__bar">
-            <span className="terminal-shell__path">
+        <div className="card flex min-h-0 flex-1 flex-col">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b-[4px] border-ink bg-surface-variant px-3 py-2">
+            <span className="inline-flex items-center gap-1.5 border-2 border-ink bg-surface-container-lowest px-2 py-1 font-mono text-xs font-bold tracking-wide break-all">
               <IconFolder />
               {cwd || "~"}
             </span>
-            <div className="terminal-shell__actions">
-              <button type="button" className="button--neutral" onClick={onEdit}>
+            <div className="flex gap-2">
+              <button type="button" className={`${actionBtn} bg-surface-container-lowest text-ink`} onClick={onEdit}>
                 <IconEdit />
                 Edit
               </button>
               {isRunning ? (
                 <button
                   type="button"
-                  className="button--danger"
+                  className={`${actionBtn} bg-error text-on-error`}
                   onClick={() =>
                     void stopTerminal(terminalId).catch((err) =>
                       onError(err instanceof Error ? err.message : String(err)),
@@ -174,7 +182,7 @@ export function TerminalView({
               ) : (
                 <button
                   type="button"
-                  className="button--neutral"
+                  className={`${actionBtn} bg-surface-container-lowest text-ink`}
                   onClick={() =>
                     void restartTerminal(terminalId).catch((err) =>
                       onError(err instanceof Error ? err.message : String(err)),
@@ -185,15 +193,15 @@ export function TerminalView({
                   Start
                 </button>
               )}
-              <button type="button" className="button--danger" onClick={onDelete}>
+              <button type="button" className={`${actionBtn} bg-error text-on-error`} onClick={onDelete}>
                 <IconTrash />
                 Remove
               </button>
             </div>
           </div>
-          <div className="terminal-shell__output-wrap">
-            <div className="terminal-shell__output" data-testid="terminal-view" ref={containerRef} />
-            <div className="terminal-shell__scanlines" aria-hidden="true" />
+          <div className="relative min-h-0 flex-1">
+            <div className="absolute inset-0 bg-black p-2" data-testid="terminal-view" ref={containerRef} />
+            <div className="scanlines pointer-events-none absolute inset-0" aria-hidden="true" />
           </div>
         </div>
       </div>

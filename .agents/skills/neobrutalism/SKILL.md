@@ -22,6 +22,7 @@ Terminal Core: raw, high-kinetic brutalism for developer tools. Every surface re
 - Color palette: primary (Electric Blue), secondary (Acid Green), tertiary (Hot Pink), error, surface, ink | Tokens: primary=#4240E5, secondary=#B6F300, tertiary=#DF0981, error=#BA1A1A, surface=#F9F9F9, ink=#1B1B1B
 - Spacing scale: 4/8/16/24/40/64
 - Ink (#1B1B1B) is the single fixed border/text/shadow color — it must never flip with theme, since bright fills (buttons, badges, cards) rely on it staying readable in both light and dark mode
+- **Implementation: Tailwind CSS utility classes by default.** This is a Tailwind v4 project — style components with `className` utilities, not new hand-written CSS. Tokens above are wired into Tailwind's `@theme` (`src/App.css`) as real utility classes (`bg-primary`, `border-ink`, `font-mono`, ...); reach for those before reaching for an arbitrary value, and reach for an arbitrary value (`shadow-[4px_4px_0_var(--color-ink)]`) before adding a new CSS rule. See `DESIGN.md`'s "Implementation" section for the full rules, including when a shared recipe belongs in `@layer components`.
 
 
 ## Accessibility

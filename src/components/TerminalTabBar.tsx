@@ -10,25 +10,24 @@ type TerminalTabBarProps = {
 
 export function TerminalTabBar({ terminals, activeTerminalId, onSelect, onAdd }: TerminalTabBarProps) {
   return (
-    <div className="terminal-tab-bar" role="tablist" aria-label="Terminals">
+    <div role="tablist" aria-label="Terminals" className="flex flex-wrap items-end gap-1.5">
       {terminals.map((terminal) => {
         const label = terminal.name ?? terminal.id.slice(0, 8);
+        const isActive = terminal.id === activeTerminalId;
         return (
           <button
             key={terminal.id}
             type="button"
             role="tab"
-            aria-selected={terminal.id === activeTerminalId}
-            className={
-              terminal.id === activeTerminalId ? "terminal-tab terminal-tab--active" : "terminal-tab"
-            }
+            aria-selected={isActive}
+            className={isActive ? "tab tab--active" : "tab"}
             onClick={() => onSelect(terminal.id)}
           >
             {label}
           </button>
         );
       })}
-      <button type="button" className="tab-add-button" onClick={onAdd}>
+      <button type="button" className="btn self-end px-3.5 py-2 text-xs" onClick={onAdd}>
         <IconPlus />
         New Terminal
       </button>

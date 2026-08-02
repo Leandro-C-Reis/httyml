@@ -200,23 +200,31 @@ function App() {
     : undefined;
 
   return (
-    <div className="app-root">
+    <div className="flex h-screen flex-col">
       {error && (
-        <div className="error-banner" role="alert">
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 border-b-[4px] border-ink bg-tertiary px-4 py-2.5 font-mono text-sm font-bold text-on-tertiary"
+        >
           <span>{error}</span>
-          <button type="button" onClick={() => setError(null)} aria-label="Dismiss error">
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            aria-label="Dismiss error"
+            className="cursor-pointer border-0 bg-transparent px-1 text-lg text-on-tertiary shadow-none"
+          >
             &times;
           </button>
         </div>
       )}
-      <div className="app-shell">
+      <div className="flex min-h-0 flex-1">
         <ProjectSidebar
           projects={projects}
           selectedProjectId={selectedProjectId}
           onSelect={(id) => void runAction(() => handleSelectProject(id))}
           onCreate={(name) => void runAction(() => handleCreateProject(name))}
         />
-        <main className="container">
+        <main className="box-border flex min-h-0 flex-1 flex-col gap-4 p-6">
         {!ready ? null : !selectedProjectId ? (
           <ProjectDashboard
             projects={projects}
@@ -243,20 +251,24 @@ function App() {
           />
         ) : (
           <>
-            <div className="content-header">
-              <p className="content-header__eyebrow">
-                <span className="content-header__dot" />
+            <div className="mb-2">
+              <p className="mb-1 flex items-center gap-2 font-mono text-xs font-bold tracking-wide text-primary uppercase">
+                <span className="h-2 w-2 rounded-full border border-ink bg-secondary" />
                 System online
               </p>
-              <h2 className="content-header__title">
+              <h2 className="m-0 font-display text-[2rem] leading-tight font-bold tracking-tight uppercase">
                 {projects.find((p) => p.id === selectedProjectId)?.name}
               </h2>
             </div>
             {openedTerminalIds.length === 0 ? (
               terminals.length === 0 ? (
-                <div className="terminal-empty">
+                <div className="flex flex-col items-start gap-3">
                   <p>No terminals yet.</p>
-                  <button type="button" onClick={() => setTerminalForm({ mode: "create" })}>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() => setTerminalForm({ mode: "create" })}
+                  >
                     <IconPlus />
                     New Terminal
                   </button>
@@ -265,13 +277,13 @@ function App() {
                 <p>Select a tab to open it.</p>
               )
             ) : (
-              <div className="terminal-stack">
+              <div className="flex min-h-0 flex-1 flex-col">
                 {openedTerminalIds.map((terminalId) => {
                   const info = terminals.find((t) => t.id === terminalId);
                   return (
                     <div
                       key={terminalId}
-                      className="terminal-stack-item"
+                      className="flex min-h-0 flex-1"
                       style={{ display: terminalId === activeTerminalId ? undefined : "none" }}
                     >
                       <TerminalView
