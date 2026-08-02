@@ -28,9 +28,12 @@ export function ProjectSidebar({ projects, selectedProjectId, onSelect, onCreate
   return (
     <nav aria-label="Projects" className="box-border flex w-60 shrink-0 flex-col gap-4 border-r-[4px] border-ink bg-surface p-4">
       <div className="border-b-[3px] border-ink pb-3">
-        <span className="block font-display text-xl leading-tight font-bold tracking-tight uppercase">
-          Terminal_Core
-        </span>
+        <div className="flex items-center gap-2">
+          <img src="logo.svg" width="24" height="24" alt="HTTYML Logo" />
+          <span className="block font-display text-xl leading-tight font-bold tracking-tight uppercase">
+            HTTYML
+          </span>
+        </div>
         <span className="mt-1.5 flex items-center gap-1.5 font-mono text-[0.6875rem] font-bold tracking-wide text-on-surface-variant uppercase">
           <span className="h-2 w-2 rounded-full border border-ink bg-secondary" />
           System online
