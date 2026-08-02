@@ -10,6 +10,7 @@ const mockLoadAddon = vi.fn();
 const mockDispose = vi.fn();
 const mockFit = vi.fn();
 const mockOnData = vi.fn();
+const mockReset = vi.fn();
 
 vi.mock("@xterm/xterm", () => ({
   Terminal: vi.fn().mockImplementation(function TerminalMock() {
@@ -22,6 +23,7 @@ vi.mock("@xterm/xterm", () => ({
         return { dispose: vi.fn() };
       },
       dispose: mockDispose,
+      reset: mockReset,
       rows: 24,
       cols: 80,
     };
@@ -88,6 +90,33 @@ describe("TerminalView", () => {
       expect(daemon.attachTerminal).toHaveBeenCalledWith("abc123");
       expect(daemon.onTerminalOutput).toHaveBeenCalledWith("abc123", expect.any(Function));
     });
+  });
+
+  it("does not reset the display for the initial attach state, only for a later fresh start", async () => {
+    renderTerminalView();
+    await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());
+    const handleMessage = vi.mocked(daemon.onTerminalOutput).mock.calls[0][1];
+
+    // The first StateChanged just reports wherever the Terminal already
+    // was (Rodando, since attach found it live) — resetting here would
+    // wipe the scrollback that was just replayed.
+    act(() => {
+      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Rodando" });
+    });
+    expect(mockReset).not.toHaveBeenCalled();
+
+    // Stop, then a real Start — a fresh process actually began this time,
+    // so any stuck alternate-screen-buffer state from whatever was killed
+    // must be cleared.
+    act(() => {
+      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Parado" });
+    });
+    expect(mockReset).not.toHaveBeenCalled();
+
+    act(() => {
+      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Rodando" });
+    });
+    expect(mockReset).toHaveBeenCalledTimes(1);
   });
 
   it("detaches on unmount, so a later re-attach for the same Terminal isn't a stale no-op", async () => {
@@ -164,6 +193,26 @@ describe("TerminalView", () => {
     expect(screen.getByTestId("terminal-status")).toHaveTextContent(/parado/i);
     const startButton = screen.getByRole("button", { name: /start/i });
 
+    await userEvent.click(startButton);
+    expect(daemon.restartTerminal).toHaveBeenCalledWith("abc123");
+  });
+
+  it("still lets Start work after typing into a stopped terminal", async () => {
+    renderTerminalView();
+    await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());
+    const handleMessage = vi.mocked(daemon.onTerminalOutput).mock.calls[0][1];
+    await waitFor(() => expect(mockOnData).toHaveBeenCalled());
+    const onDataCallback = mockOnData.mock.calls[0][0];
+
+    act(() => {
+      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Parado" });
+    });
+
+    // The user types before noticing the Terminal isn't running.
+    onDataCallback("echo should-not-run\n");
+    expect(daemon.writeTerminal).toHaveBeenCalledWith("abc123", "echo should-not-run\n");
+
+    const startButton = screen.getByRole("button", { name: /start/i });
     await userEvent.click(startButton);
     expect(daemon.restartTerminal).toHaveBeenCalledWith("abc123");
   });

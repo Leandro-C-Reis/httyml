@@ -324,6 +324,24 @@ impl TerminalHandle {
         let _guard = self.lifecycle.lock().unwrap();
         let live = self.process.lock().unwrap().take();
         if let Some(mut live) = live {
+            // Kill the whole foreground process group, not just the shell.
+            // An interactive shell's job control puts each foreground
+            // command in its own process group — `npm run dev`, `sleep`,
+            // whatever's actively running — separate from the shell's own
+            // group. Killing only the shell's pid (what `child.kill()`
+            // does) leaves that job running as an orphan that still holds
+            // the pty open: its reader thread never sees EOF, and keeps
+            // forwarding its output into this same Terminal's
+            // scrollback/broadcast indefinitely, interleaved with whatever
+            // gets started next. `process_group_leader` reads the pty's
+            // *current* foreground group via tcgetpgrp — the shell itself
+            // when idle, the active job when one is running — so signaling
+            // its negative reaches the whole group either way.
+            if let Some(pgid) = live.master.process_group_leader() {
+                unsafe {
+                    libc::kill(-pgid, libc::SIGKILL);
+                }
+            }
             let _ = live.child.kill();
             let _ = live.child.wait();
             self.set_state(TerminalState::Parado);

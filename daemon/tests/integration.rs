@@ -1476,3 +1476,146 @@ async fn update_terminal_config_takes_effect_on_next_restart_not_before() {
         .await;
     client.expect_output_containing("VAR-IS-updated-value").await;
 }
+
+#[tokio::test]
+async fn stop_kills_the_active_foreground_job_not_just_the_shell() {
+    // A plain `sh -c '...'` launched as the sole foreground command (as
+    // opposed to a loop typed directly at the interactive shell, which
+    // bash can run without forking a separate job) gets its own process
+    // group under job control — the same way `npm run dev` would. Stop
+    // must kill that whole group, not just the interactive shell wrapping
+    // it, or it survives as an orphan still holding the pty open.
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: Some(
+                "sh -c 'while true; do echo ZOMBIE-TICK; sleep 0.05; done'".to_string(),
+            ),
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+    client.expect_state(TerminalState::Rodando).await;
+    client.expect_output_containing("ZOMBIE-TICK").await;
+
+    client
+        .send(&ClientMessage::Stop {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_state(TerminalState::Parado).await;
+    client.drain_briefly(Duration::from_millis(150)).await;
+
+    client
+        .send(&ClientMessage::Restart {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_state(TerminalState::Rodando).await;
+
+    client
+        .send(&ClientMessage::Write {
+            terminal_id,
+            data: STANDARD.encode("echo RESTART-MARKER\n"),
+        })
+        .await;
+    let collected = client.expect_output_containing("RESTART-MARKER").await;
+
+    // The pty echoes the startup command's own source line once, which
+    // itself contains the string "ZOMBIE-TICK" (it's typed as
+    // `echo ZOMBIE-TICK` inside the loop) — that single echo is expected.
+    // A still-running orphan would tick every 50ms and add many more.
+    let tick_count = collected.matches("ZOMBIE-TICK").count();
+    assert!(
+        tick_count <= 1,
+        "the old foreground job kept ticking after restart ({tick_count} occurrences): {collected:?}"
+    );
+}
+
+#[tokio::test]
+async fn restart_works_after_writing_to_a_stopped_terminal() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: None,
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+    client.expect_state(TerminalState::Rodando).await;
+
+    client
+        .send(&ClientMessage::Stop {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_state(TerminalState::Parado).await;
+
+    // Typing into a stopped Terminal — the user pressing keys before
+    // noticing it's not running.
+    client
+        .send(&ClientMessage::Write {
+            terminal_id: terminal_id.clone(),
+            data: STANDARD.encode("echo should-not-run\n"),
+        })
+        .await;
+
+    client
+        .send(&ClientMessage::Restart {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_state(TerminalState::Rodando).await;
+
+    client
+        .send(&ClientMessage::Write {
+            terminal_id,
+            data: STANDARD.encode("echo AFTER-RESTART\n"),
+        })
+        .await;
+    client.expect_output_containing("AFTER-RESTART").await;
+}

@@ -72,10 +72,28 @@ export function TerminalView({
       fitAddon.fit();
     }
 
+    // Only true once the very first StateChanged (whatever attach's actual
+    // current state is) has been received — later transitions are real
+    // lifecycle events, that first one is just attach reporting where
+    // things already stood.
+    let hasReceivedInitialState = false;
     const handleMessage = (msg: DaemonMessage) => {
       if (msg.type === "Scrollback" || msg.type === "Output") {
         term.write(decodeBase64(msg.data));
       } else if (msg.type === "StateChanged") {
+        // A process that was killed mid-TUI (a dev server's fancy status
+        // view, htop, vim, ...) rarely gets to restore the normal screen
+        // buffer first — it just dies with the alternate buffer still
+        // active. Since this component (and its xterm instance) doesn't
+        // remount across Stop/Start, that stuck alternate-buffer state
+        // would otherwise persist into the next process's output, making
+        // a freshly started Terminal look blank/frozen. Reset whenever a
+        // *new* process actually starts (not on the initial attach, which
+        // would wipe legitimately replayed scrollback instead).
+        if (hasReceivedInitialState && msg.state === "Rodando") {
+          term.reset();
+        }
+        hasReceivedInitialState = true;
         setState(msg.state);
       }
     };
@@ -140,13 +158,17 @@ export function TerminalView({
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="flex items-center gap-3">
         <h2 className="m-0 font-display text-2xl font-bold tracking-tight uppercase">{name}</h2>
-        <span
-          data-testid="terminal-status"
-          data-state={stateVariant(state)}
-          className={`status-chip ${statusColor}`}
-        >
-          {stateLabel(state)}
-        </span>
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="border-2 p-1 bg-surface-variant text-xs font-bold tracking-wide flex items-center gap-1.5 border-on-surface-variant text-on-surface-variant">
+          <span className={`${statusColor} w-2 h-2 rounded-full border border-ink`}></span>
+          <span
+            data-testid="terminal-status"
+            data-state={stateVariant(state)}
+          >
+            {stateLabel(state).toUpperCase()}
+          </span>
+        </div>
       </div>
       <div className="flex min-h-0 flex-1 flex-col">
         <TerminalTabBar
@@ -182,7 +204,7 @@ export function TerminalView({
               ) : (
                 <button
                   type="button"
-                  className={`${actionBtn} bg-surface-container-lowest text-ink`}
+                  className={`${actionBtn} bg-secondary text-ink`}
                   onClick={() =>
                     void restartTerminal(terminalId).catch((err) =>
                       onError(err instanceof Error ? err.message : String(err)),
