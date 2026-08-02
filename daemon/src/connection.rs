@@ -21,6 +21,11 @@ pub struct Registry {
     config_path: PathBuf,
     projects: Mutex<HashMap<String, Project>>,
     terminals: Mutex<HashMap<String, Arc<TerminalHandle>>>,
+    /// Terminal ids in creation order — `terminals` is a `HashMap` (no
+    /// iteration order guarantee), so anything user-facing (list, persist)
+    /// must read order from here instead, or a Daemon restart shuffles
+    /// Terminals on every reload.
+    terminal_order: Mutex<Vec<String>>,
 }
 
 impl Registry {
@@ -35,6 +40,7 @@ impl Registry {
             .into_iter()
             .map(|p| (p.id.clone(), p))
             .collect();
+        let terminal_order = loaded_terminals.iter().map(|(id, _)| id.clone()).collect();
         let terminals = loaded_terminals
             .into_iter()
             .map(|(id, config)| (id.clone(), TerminalHandle::reload(id, config)))
@@ -44,6 +50,7 @@ impl Registry {
             config_path,
             projects: Mutex::new(projects),
             terminals: Mutex::new(terminals),
+            terminal_order: Mutex::new(terminal_order),
         })
     }
 }
@@ -67,13 +74,16 @@ fn persist(registry: &Arc<Registry>) {
             name: p.name.clone(),
         })
         .collect();
+    let terminals_lock = registry.terminals.lock().unwrap();
     let terminals: Vec<(String, TerminalConfig)> = registry
-        .terminals
+        .terminal_order
         .lock()
         .unwrap()
-        .values()
+        .iter()
+        .filter_map(|id| terminals_lock.get(id))
         .map(|t| (t.id.clone(), t.config_snapshot()))
         .collect();
+    drop(terminals_lock);
 
     if let Err(err) = store::save(&registry.config_path, &projects, &terminals) {
         eprintln!(
@@ -138,6 +148,11 @@ fn lookup(registry: &Arc<Registry>, terminal_id: &str) -> Option<Arc<TerminalHan
 fn stop_and_forget(registry: &Arc<Registry>, handle: &Arc<TerminalHandle>) {
     log_err(handle.stop());
     registry.terminals.lock().unwrap().remove(&handle.id);
+    registry
+        .terminal_order
+        .lock()
+        .unwrap()
+        .retain(|id| id != &handle.id);
 }
 
 /// Logs a fire-and-forget command's failure (e.g. writing to a `Stopped`
@@ -215,26 +230,30 @@ async fn handle_message(
             send(writer, &DaemonMessage::Projects { projects }).await?;
         }
         ClientMessage::ListTerminals { project_id } => {
-            let terminals = registry
-                .terminals
-                .lock()
-                .unwrap()
-                .values()
-                .filter(|t| t.project_id == project_id)
-                .map(|t| {
-                    let cfg = t.config_snapshot();
-                    TerminalInfo {
-                        id: t.id.clone(),
-                        name: cfg.name,
-                        cwd: cfg.cwd,
-                        startup_command: cfg.startup_command,
-                        env_vars: cfg.env_vars,
-                        shell: cfg.shell,
-                        scrollback_lines: cfg.scrollback_lines,
-                        state: t.state(),
-                    }
-                })
-                .collect();
+            let terminals: Vec<TerminalInfo> = {
+                let terminals_lock = registry.terminals.lock().unwrap();
+                registry
+                    .terminal_order
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|id| terminals_lock.get(id))
+                    .filter(|t| t.project_id == project_id)
+                    .map(|t| {
+                        let cfg = t.config_snapshot();
+                        TerminalInfo {
+                            id: t.id.clone(),
+                            name: cfg.name,
+                            cwd: cfg.cwd,
+                            startup_command: cfg.startup_command,
+                            env_vars: cfg.env_vars,
+                            shell: cfg.shell,
+                            scrollback_lines: cfg.scrollback_lines,
+                            state: t.state(),
+                        }
+                    })
+                    .collect()
+            };
             send(
                 writer,
                 &DaemonMessage::Terminals {
@@ -271,6 +290,7 @@ async fn handle_message(
                 .lock()
                 .unwrap()
                 .insert(id.clone(), handle);
+            registry.terminal_order.lock().unwrap().push(id.clone());
             persist(registry);
             send(writer, &DaemonMessage::Created { terminal_id: id }).await?;
         }

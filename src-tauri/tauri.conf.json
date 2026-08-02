@@ -13,6 +13,7 @@
     "windows": [
       {
         "title": "httyml",
+        "maximized": true,
         "width": 800,
         "height": 600
       }
@@ -23,7 +24,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": "appimage",
     "externalBin": ["binaries/httyml-daemon"],
     "icon": [
       "icons/32x32.png",

@@ -184,10 +184,12 @@ export function TerminalView({
         />
         <div className="card flex min-h-0 flex-1 flex-col">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b-[4px] border-ink bg-surface-variant px-3 py-2">
-            <span className="inline-flex items-center gap-1.5 border-2 border-ink bg-surface-container-lowest px-2 py-1 font-mono text-xs font-bold tracking-wide break-all">
+            <div className="flex items-center gap-2">
               <IconFolder />
-              {cwd || "~"}
-            </span>
+              <span className="inline-flex items-center gap-1.5 border-2 border-ink bg-surface-container-lowest px-2 py-1 font-mono text-xs font-bold tracking-wide break-all">
+                {cwd || "~"}
+              </span>
+            </div>
             <div className="flex gap-2">
               <button type="button" className={`${actionBtn} bg-surface-container-lowest text-ink`} onClick={onEdit}>
                 <IconEdit />
