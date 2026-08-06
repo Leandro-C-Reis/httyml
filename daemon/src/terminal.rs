@@ -118,6 +118,9 @@ pub struct TerminalHandle {
 }
 
 impl TerminalHandle {
+    const SHELL_FALLBACK_PATH: &'static str =
+        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+
     /// Builds a Terminal from config without starting a process — always
     /// `Stopped` until `start_process` runs. Shared by `spawn` (which starts
     /// immediately, for quick-create) and `reload` (which doesn't, since a
@@ -213,6 +216,47 @@ impl TerminalHandle {
         )
     }
 
+    fn looks_like_runtime_mount_path(entry: &str) -> bool {
+        entry.starts_with("/tmp/.mount_") || entry.contains("/.mount_")
+    }
+
+    fn sanitize_inherited_path(path: &str) -> String {
+        let mut kept = Vec::new();
+        for entry in path.split(':') {
+            if !Self::looks_like_runtime_mount_path(entry) {
+                kept.push(entry);
+            }
+        }
+        if kept.is_empty() {
+            Self::SHELL_FALLBACK_PATH.to_string()
+        } else {
+            kept.join(":")
+        }
+    }
+
+    /// Strips AppImage/runtime-only environment leakage inherited by the
+    /// sidecar process before spawning a user-facing PTY shell.
+    fn sanitize_inherited_runtime_env(cmd: &mut CommandBuilder) {
+        for key in ["APPDIR", "APPIMAGE", "ARGV0", "OWD"] {
+            cmd.env_remove(key);
+        }
+
+        if let Ok(path) = std::env::var("PATH") {
+            let clean_path = Self::sanitize_inherited_path(&path);
+            if clean_path != path {
+                cmd.env("PATH", clean_path);
+            }
+        }
+
+        for key in ["LD_LIBRARY_PATH", "PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE"] {
+            if let Ok(value) = std::env::var(key) {
+                if Self::looks_like_runtime_mount_path(&value) {
+                    cmd.env_remove(key);
+                }
+            }
+        }
+    }
+
     fn start_process(self: &Arc<Self>) -> anyhow::Result<()> {
         // Cloned up front so the PTY spawn below doesn't run with the config
         // lock held — `update_config` must never block on a slow spawn.
@@ -234,6 +278,7 @@ impl TerminalHandle {
             .or_else(|| std::env::var("SHELL").ok())
             .unwrap_or_else(|| "/bin/sh".to_string());
         let mut cmd = CommandBuilder::new(shell);
+        Self::sanitize_inherited_runtime_env(&mut cmd);
         let cwd = if cfg.cwd.is_empty() {
             std::env::var("HOME").unwrap_or_else(|_| "/".to_string())
         } else {
@@ -383,5 +428,35 @@ impl TerminalHandle {
             pixel_height: 0,
         })?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TerminalHandle;
+
+    #[test]
+    fn detects_appimage_mount_entries() {
+        assert!(TerminalHandle::looks_like_runtime_mount_path(
+            "/tmp/.mount_httymlhPhdFi/usr/bin"
+        ));
+        assert!(TerminalHandle::looks_like_runtime_mount_path(
+            "/run/user/1000/.mount_demo/usr/lib"
+        ));
+        assert!(!TerminalHandle::looks_like_runtime_mount_path("/usr/bin"));
+    }
+
+    #[test]
+    fn removes_mount_paths_from_path() {
+        let input = "/tmp/.mount_httymlhPhdFi/usr/bin:/usr/local/bin:/usr/bin";
+        let clean = TerminalHandle::sanitize_inherited_path(input);
+        assert_eq!(clean, "/usr/local/bin:/usr/bin");
+    }
+
+    #[test]
+    fn falls_back_when_all_entries_are_mount_paths() {
+        let input = "/tmp/.mount_foo/usr/bin:/tmp/.mount_foo/usr/sbin";
+        let clean = TerminalHandle::sanitize_inherited_path(input);
+        assert_eq!(clean, TerminalHandle::SHELL_FALLBACK_PATH);
     }
 }
