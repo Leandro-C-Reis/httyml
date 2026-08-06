@@ -11,6 +11,21 @@ pub enum ClientMessage {
     CreateProject {
         name: String,
     },
+    /// Replaces a Project's editable fields wholesale. Identity (`id`) and
+    /// its Terminals are untouched; `default_cwd` only prefills the create
+    /// Terminal form, it never moves an existing Terminal (see ADR-0004).
+    UpdateProject {
+        project_id: String,
+        name: String,
+        #[serde(default)]
+        description: Option<String>,
+        #[serde(default)]
+        color: Option<String>,
+        #[serde(default)]
+        icon: Option<String>,
+        #[serde(default)]
+        default_cwd: String,
+    },
     ListProjects,
     ListTerminals {
         project_id: String,
@@ -85,11 +100,20 @@ pub enum ClientMessage {
     Shutdown,
 }
 
-/// A Project as listed to the app — just an id and a name.
+/// A Project as listed to the app: identity plus the metadata the sidebar
+/// and the edit page render (see `crate::project::Project`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectInfo {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub default_cwd: String,
 }
 
 /// A Terminal as listed to the app, scoped to a Project. Carries its full
@@ -115,6 +139,9 @@ pub enum DaemonMessage {
     ProjectCreated {
         project_id: String,
         name: String,
+    },
+    ProjectUpdated {
+        project: ProjectInfo,
     },
     Projects {
         projects: Vec<ProjectInfo>,

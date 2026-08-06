@@ -63,16 +63,24 @@ impl Registry {
 /// (`CreateProject`, `CreateTerminal`, `DeleteTerminal`, `DeleteProject`) —
 /// there's no structural guard for this, so a future message that changes
 /// persisted config (e.g. a rename/update) must remember to call it too.
+fn project_info(project: &Project) -> ProjectInfo {
+    ProjectInfo {
+        id: project.id.clone(),
+        name: project.name.clone(),
+        description: project.description.clone(),
+        color: project.color.clone(),
+        icon: project.icon.clone(),
+        default_cwd: project.default_cwd.clone(),
+    }
+}
+
 fn persist(registry: &Arc<Registry>) {
     let projects: Vec<Project> = registry
         .projects
         .lock()
         .unwrap()
         .values()
-        .map(|p| Project {
-            id: p.id.clone(),
-            name: p.name.clone(),
-        })
+        .cloned()
         .collect();
     let terminals_lock = registry.terminals.lock().unwrap();
     let terminals: Vec<(String, TerminalConfig)> = registry
@@ -201,10 +209,7 @@ async fn handle_message(
             let id = Uuid::new_v4().to_string();
             registry.projects.lock().unwrap().insert(
                 id.clone(),
-                Project {
-                    id: id.clone(),
-                    name: name.clone(),
-                },
+                Project::new(id.clone(), name.clone()),
             );
             persist(registry);
             send(
@@ -216,16 +221,51 @@ async fn handle_message(
             )
             .await?;
         }
+        ClientMessage::UpdateProject {
+            project_id,
+            name,
+            description,
+            color,
+            icon,
+            default_cwd,
+        } => {
+            let updated = {
+                let mut projects = registry.projects.lock().unwrap();
+                match projects.get_mut(&project_id) {
+                    Some(project) => {
+                        project.name = name;
+                        project.description = description;
+                        project.color = color;
+                        project.icon = icon;
+                        project.default_cwd = default_cwd;
+                        Some(project_info(project))
+                    }
+                    None => None,
+                }
+            };
+            match updated {
+                Some(project) => {
+                    persist(registry);
+                    send(writer, &DaemonMessage::ProjectUpdated { project }).await?;
+                }
+                None => {
+                    send(
+                        writer,
+                        &DaemonMessage::Error {
+                            message: format!("unknown project {project_id}"),
+                        },
+                    )
+                    .await?;
+                }
+            }
+        }
         ClientMessage::ListProjects => {
             let projects = registry
                 .projects
                 .lock()
                 .unwrap()
                 .values()
-                .map(|p| ProjectInfo {
-                    id: p.id.clone(),
-                    name: p.name.clone(),
-                })
+                .map(project_info)
                 .collect();
             send(writer, &DaemonMessage::Projects { projects }).await?;
         }

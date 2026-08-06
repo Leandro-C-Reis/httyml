@@ -89,11 +89,11 @@ export function ConfigureTerminalPage({
         aria-label={isEdit ? "Edit terminal" : "Create terminal"}
         className="card relative flex flex-col gap-5 p-5 pt-0"
       >
-        <div className="-mx-5 mb-1 flex h-8 shrink-0 items-center gap-1.5 border-b-[4px] border-ink bg-secondary px-4">
-          <span className="h-2.5 w-2.5 shrink-0 bg-on-secondary" />
-          <span className="h-2.5 w-2.5 shrink-0 bg-on-secondary" />
-          <span className="h-2.5 w-2.5 shrink-0 bg-on-secondary" />
-          <span className="ml-auto font-mono text-xs font-bold tracking-wide text-on-secondary">TTY1</span>
+        <div className="-mx-5 mb-1 flex h-8 shrink-0 items-center gap-1.5 border-b-[4px] border-ink bg-ink px-4">
+          <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-error" />
+          <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-secondary" />
+          <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-tertiary" />
+          <span className="ml-auto font-mono text-xs font-bold tracking-wide text-secondary">TTY1</span>
         </div>
         <section className="flex flex-col gap-3">
           <h2 className="m-0 inline-block w-fit border-b-2 border-ink pb-1.5 font-display text-xl font-bold uppercase">

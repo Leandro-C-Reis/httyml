@@ -1,21 +1,30 @@
 import { useState, type FormEvent } from "react";
 import type { ProjectInfo } from "../lib/daemon";
-import { IconPlus } from "./icons";
+import { IconHome, IconPlus } from "./icons";
+import { projectColor, projectIcon } from "./projectStyle";
 
 type ProjectSidebarProps = {
   projects: ProjectInfo[];
   selectedProjectId: string | null;
   onSelect: (projectId: string) => void;
   onCreate: (name: string) => void;
+  /// Clears the selection and shows the Active Projects dashboard.
+  onGoHome: () => void;
 };
 
 const projectItemBase =
-  "w-full cursor-pointer rounded-none border-[3px] px-5 py-2.5 text-left font-mono transition-[transform,box-shadow] duration-100 border-ink shadow-[4px_4px_0_var(--color-ink)]";
+  "w-full cursor-pointer rounded-none border-[3px] px-2 py-1.5 text-left font-mono transition-[transform,box-shadow] duration-100 border-ink shadow-[4px_4px_0_var(--color-ink)]";
 const projectItemInactive =
   "bg-transparent text-ink hover:-translate-x-0.5 hover:-translate-y-0.5 hover:bg-surface-variant";
 const projectItemSelected = "bg-secondary text-on-secondary";
 
-export function ProjectSidebar({ projects, selectedProjectId, onSelect, onCreate }: ProjectSidebarProps) {
+export function ProjectSidebar({
+  projects,
+  selectedProjectId,
+  onSelect,
+  onCreate,
+  onGoHome,
+}: ProjectSidebarProps) {
   const [name, setName] = useState("");
 
   function handleSubmit(event: FormEvent) {
@@ -39,6 +48,16 @@ export function ProjectSidebar({ projects, selectedProjectId, onSelect, onCreate
           System online
         </span>
       </div>
+      <button
+        type="button"
+        className={`${projectItemBase} flex items-center gap-2 text-sm ${
+          selectedProjectId === null ? projectItemSelected : projectItemInactive
+        }`}
+        onClick={onGoHome}
+      >
+        <IconHome />
+        Active Projects
+      </button>
       <form onSubmit={handleSubmit} aria-label="Create project" className="flex flex-col gap-2">
         <input
           value={name}
@@ -53,19 +72,30 @@ export function ProjectSidebar({ projects, selectedProjectId, onSelect, onCreate
         </button>
       </form>
       <ul className="m-0 flex flex-1 list-none flex-col gap-2 overflow-y-auto p-0">
-        {projects.map((project) => (
-          <li key={project.id}>
-            <button
-              type="button"
-              className={`${projectItemBase} ${
-                project.id === selectedProjectId ? projectItemSelected : projectItemInactive
-              }`}
-              onClick={() => onSelect(project.id)}
-            >
-              {project.name}
-            </button>
-          </li>
-        ))}
+        {projects.map((project) => {
+          const { Icon } = projectIcon(project.icon);
+          return (
+            <li key={project.id}>
+              <button
+                type="button"
+                className={`${projectItemBase} flex items-center gap-2 ${
+                  project.id === selectedProjectId ? projectItemSelected : projectItemInactive
+                }`}
+                onClick={() => onSelect(project.id)}
+              >
+                <span
+                  className="h-8 w-8 shrink-0 border-2 border-ink flex items-center justify-center"
+                  style={projectColor(project.color).swatch}
+                >
+                  <Icon />
+                </span>
+                <span className="truncate text-sm" title={project.name}>
+                  {project.name}
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </nav>
   );

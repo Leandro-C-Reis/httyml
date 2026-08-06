@@ -198,9 +198,12 @@ describe("TerminalView", () => {
     renderTerminalView();
     await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());
 
-    expect(screen.getByRole("heading", { name: "Terminal 1" })).toBeInTheDocument();
+    // The Terminal's name lives in the tab bar now; the view itself is
+    // labelled with it (see the group role) rather than repeating it.
+    expect(screen.getByRole("group", { name: "Terminal 1" })).toBeInTheDocument();
     expect(screen.getByText("/home/dev/project")).toBeInTheDocument();
-    expect(screen.getByTestId("terminal-status")).toHaveTextContent(/running/i);
+    // A running Terminal shows its screen, not the idle overlay.
+    expect(screen.queryByTestId("terminal-idle-overlay")).not.toBeInTheDocument();
     const stopButton = screen.getByRole("button", { name: /stop/i });
 
     await userEvent.click(stopButton);
@@ -217,7 +220,7 @@ describe("TerminalView", () => {
     });
 
     expect(screen.getByTestId("terminal-status")).toHaveTextContent(/stopped/i);
-    const startButton = screen.getByRole("button", { name: /start/i });
+    const startButton = screen.getByRole("button", { name: "Start terminal" });
 
     await userEvent.click(startButton);
     expect(daemon.restartTerminal).toHaveBeenCalledWith("abc123");
@@ -238,7 +241,7 @@ describe("TerminalView", () => {
     onDataCallback("echo should-not-run\n");
     expect(daemon.writeTerminal).toHaveBeenCalledWith("abc123", "echo should-not-run\n");
 
-    const startButton = screen.getByRole("button", { name: /start/i });
+    const startButton = screen.getByRole("button", { name: "Start terminal" });
     await userEvent.click(startButton);
     expect(daemon.restartTerminal).toHaveBeenCalledWith("abc123");
   });
@@ -261,7 +264,7 @@ describe("TerminalView", () => {
     expect(status).toHaveTextContent("7");
     expect(status).toHaveAttribute("data-state", "exited");
 
-    const startButton = screen.getByRole("button", { name: /start/i });
+    const startButton = screen.getByRole("button", { name: "Start terminal" });
     await userEvent.click(startButton);
     expect(daemon.restartTerminal).toHaveBeenCalledWith("abc123");
   });

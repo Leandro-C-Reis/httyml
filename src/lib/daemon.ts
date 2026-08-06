@@ -3,7 +3,23 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type TerminalState = "Running" | "Stopped" | { Exited: { exit_code: number } };
 
-export type ProjectInfo = { id: string; name: string };
+export type ProjectInfo = {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  icon: string | null;
+  /// Prefills the cwd of a newly created Terminal; empty means no default.
+  default_cwd: string;
+};
+
+export type UpdateProjectOptions = {
+  name: string;
+  description: string | null;
+  color: string | null;
+  icon: string | null;
+  defaultCwd: string;
+};
 // Field names below match the daemon's actual JSON wire format (Rust struct
 // fields, snake_case — Tauri only camel<->snake-converts `#[tauri::command]`
 // arguments, never arbitrary serde struct fields; see `exit_code` above for
@@ -32,6 +48,20 @@ export async function ensureDaemon(): Promise<void> {
 
 export async function createProject(name: string): Promise<string> {
   return invoke<string>("create_project", { name });
+}
+
+export async function updateProject(
+  projectId: string,
+  options: UpdateProjectOptions,
+): Promise<ProjectInfo> {
+  return invoke<ProjectInfo>("update_project", {
+    projectId,
+    name: options.name,
+    description: options.description,
+    color: options.color,
+    icon: options.icon,
+    defaultCwd: options.defaultCwd,
+  });
 }
 
 export async function listProjects(): Promise<ProjectInfo[]> {

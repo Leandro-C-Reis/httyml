@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import * as daemon from "./lib/daemon";
@@ -10,7 +10,14 @@ vi.mock("./lib/daemon", () => ({
   createProject: vi.fn(),
   listTerminals: vi.fn().mockResolvedValue([]),
   createTerminal: vi.fn(),
+  updateProject: vi.fn(),
 }));
+
+// Projects carry presentation metadata (colour, icon, ...) that none of
+// these tests care about — this keeps them to the fields they assert on.
+function project(id: string, name: string): daemon.ProjectInfo {
+  return { id, name, description: null, color: null, icon: null, default_cwd: "" };
+}
 
 vi.mock("./components/TerminalView", () => ({
   TerminalView: ({
@@ -54,7 +61,7 @@ describe("App", () => {
   });
 
   it("shows a New Terminal prompt — no inline create form — for an empty project", async () => {
-    vi.mocked(daemon.listProjects).mockResolvedValue([{ id: "p1", name: "Web Dev" }]);
+    vi.mocked(daemon.listProjects).mockResolvedValue([project("p1", "Web Dev")]);
     render(<App />);
 
     await userEvent.click(await screen.findByRole("button", { name: /open project/i }));
@@ -64,8 +71,74 @@ describe("App", () => {
     expect(screen.queryByText(/configure terminal/i)).not.toBeInTheDocument();
   });
 
+  it("goes back to the Active Projects dashboard from an open project", async () => {
+    vi.mocked(daemon.listProjects).mockResolvedValue([project("p1", "Web Dev")]);
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /open project/i }));
+    // Both the sidebar and the open Project's header offer the way back.
+    const backButtons = await screen.findAllByRole("button", { name: /^active projects$/i });
+    await userEvent.click(backButtons[backButtons.length - 1]);
+
+    expect(await screen.findByRole("button", { name: /open project/i })).toBeInTheDocument();
+    expect(screen.queryByTestId("terminal-view-stub")).not.toBeInTheDocument();
+  });
+
+  it("edits a Project's name and metadata from the dashboard", async () => {
+    const p1 = project("p1", "Web Dev");
+    vi.mocked(daemon.listProjects).mockResolvedValue([p1]);
+    vi.mocked(daemon.updateProject).mockResolvedValue({ ...p1, name: "Web" });
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /edit web dev/i }));
+    const form = await screen.findByRole("form", { name: /edit project/i });
+    const name = within(form).getByLabelText(/project name/i);
+    await userEvent.clear(name);
+    await userEvent.type(name, "Web");
+    await userEvent.click(within(form).getByRole("button", { name: /^pink$/i }));
+    await userEvent.click(within(form).getByRole("button", { name: /^bolt$/i }));
+    await userEvent.click(within(form).getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(daemon.updateProject).toHaveBeenCalledWith("p1", {
+        name: "Web",
+        description: null,
+        color: "pink",
+        icon: "bolt",
+        defaultCwd: "",
+      });
+    });
+  });
+
+  it("stores a custom Project colour as the hex the user picked", async () => {
+    const p1 = project("p1", "Web Dev");
+    vi.mocked(daemon.listProjects).mockResolvedValue([p1]);
+    vi.mocked(daemon.updateProject).mockResolvedValue({ ...p1, color: "#123456" });
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /edit web dev/i }));
+    const form = await screen.findByRole("form", { name: /edit project/i });
+    // A native colour input can't be "typed" into — set its value directly.
+    fireEvent.change(within(form).getByLabelText(/custom color/i), {
+      target: { value: "#123456" },
+    });
+    // The picked colour joins the presets as a selected swatch of its own.
+    expect(within(form).getByRole("button", { name: /custom #123456/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await userEvent.click(within(form).getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(daemon.updateProject).toHaveBeenCalledWith(
+        "p1",
+        expect.objectContaining({ color: "#123456" }),
+      );
+    });
+  });
+
   it("auto-selects the first tab when opening a project that already has Terminals", async () => {
-    vi.mocked(daemon.listProjects).mockResolvedValue([{ id: "p1", name: "Web Dev" }]);
+    vi.mocked(daemon.listProjects).mockResolvedValue([project("p1", "Web Dev")]);
     vi.mocked(daemon.listTerminals).mockResolvedValue([
       {
         id: "t1",
@@ -110,8 +183,8 @@ describe("App", () => {
     const t3 = { ...t1, id: "t3", name: "Terminal 3" };
 
     vi.mocked(daemon.listProjects).mockResolvedValue([
-      { id: "p1", name: "Project A" },
-      { id: "p2", name: "Project B" },
+      project("p1", "Project A"),
+      project("p2", "Project B"),
     ]);
     let projectACalls = 0;
     vi.mocked(daemon.listTerminals).mockImplementation(async (projectId: string) => {
@@ -148,7 +221,7 @@ describe("App", () => {
   });
 
   it("defaults a new Terminal's directory to the last selected Terminal's, not the last created one's", async () => {
-    vi.mocked(daemon.listProjects).mockResolvedValue([{ id: "p1", name: "Web Dev" }]);
+    vi.mocked(daemon.listProjects).mockResolvedValue([project("p1", "Web Dev")]);
     vi.mocked(daemon.listTerminals).mockResolvedValue([
       {
         id: "t1",
@@ -174,7 +247,7 @@ describe("App", () => {
   });
 
   it("opens the Configure Terminal page when adding a terminal, and defaults its name", async () => {
-    vi.mocked(daemon.listProjects).mockResolvedValue([{ id: "p1", name: "Web Dev" }]);
+    vi.mocked(daemon.listProjects).mockResolvedValue([project("p1", "Web Dev")]);
     vi.mocked(daemon.listTerminals).mockResolvedValue([]);
     vi.mocked(daemon.createTerminal).mockResolvedValue("t1");
     render(<App />);

@@ -151,6 +151,31 @@ async fn create_project(name: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn update_project(
+    project_id: String,
+    name: String,
+    description: Option<String>,
+    color: Option<String>,
+    icon: Option<String>,
+    default_cwd: String,
+) -> Result<ProjectInfo, String> {
+    match send_one(ClientMessage::UpdateProject {
+        project_id,
+        name,
+        description,
+        color,
+        icon,
+        default_cwd,
+    })
+    .await?
+    {
+        DaemonMessage::ProjectUpdated { project } => Ok(project),
+        DaemonMessage::Error { message } => Err(message),
+        _ => Err("unexpected response from daemon".to_string()),
+    }
+}
+
+#[tauri::command]
 async fn list_projects() -> Result<Vec<ProjectInfo>, String> {
     match send_one(ClientMessage::ListProjects).await? {
         DaemonMessage::Projects { projects } => Ok(projects),
@@ -421,6 +446,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ensure_daemon,
             create_project,
+            update_project,
             list_projects,
             list_terminals,
             create_terminal,

@@ -6,16 +6,19 @@ import {
   ensureDaemon,
   listProjects,
   listTerminals,
+  updateProject,
   updateTerminal,
   type CreateTerminalOptions,
+  type UpdateProjectOptions,
   type ProjectInfo,
   type TerminalInfo,
 } from "./lib/daemon";
 import { ProjectSidebar } from "./components/ProjectSidebar";
 import { ProjectDashboard } from "./components/ProjectDashboard";
 import { ConfigureTerminalPage, type ConfigureTerminalInitial } from "./components/ConfigureTerminalPage";
+import { ConfigureProjectPage } from "./components/ConfigureProjectPage";
 import { TerminalView } from "./components/TerminalView";
-import { IconPlus } from "./components/icons";
+import { IconArrowLeft, IconEdit, IconPlus } from "./components/icons";
 import "./App.css";
 
 type TerminalFormState = { mode: "create" } | { mode: "edit"; terminalId: string } | null;
@@ -48,6 +51,10 @@ function App() {
   // Whether the Configure/Edit Terminal page is showing in place of the tab
   // bar — its own screen, not an always-visible inline form.
   const [terminalForm, setTerminalForm] = useState<TerminalFormState>(null);
+  // Which Project's edit page is showing, if any. Reachable both from the
+  // dashboard card and from the open Project's header, so it's kept
+  // independent of `selectedProjectId` (editing never opens a Project).
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   // Tracks which Project's terminal list is the most recently requested one,
   // so a slow response for a Project the user has since switched away from
   // can't overwrite what's currently selected (see refreshTerminals).
@@ -139,6 +146,25 @@ function App() {
     await refreshTerminals(projectId);
   }
 
+  // Back to the Active Projects dashboard: the selection is what decides
+  // which screen `main` renders, so clearing it is the whole navigation.
+  // Opened tabs are dropped along with it, same as switching Projects.
+  function handleGoHome() {
+    setSelectedProjectId(null);
+    setTerminals([]);
+    setOpenedTerminalIds([]);
+    setActiveTerminalId(null);
+    setTerminalForm(null);
+    setEditingProjectId(null);
+    latestProjectRequest.current = null;
+  }
+
+  async function handleUpdateProject(projectId: string, options: UpdateProjectOptions) {
+    await updateProject(projectId, options);
+    setProjects(await listProjects());
+    setEditingProjectId(null);
+  }
+
   async function handleCreateTerminal(cwd: string, options: CreateTerminalOptions) {
     if (!selectedProjectId) return;
     // Unnamed Terminals get a predictable "Terminal N" default instead of
@@ -181,7 +207,11 @@ function App() {
 
   // A new Terminal defaults to the last *selected* one's directory (not the
   // last *created* one's) — picking up wherever you were just looking.
-  const defaultCwdForNewTerminal = terminals.find((t) => t.id === activeTerminalId)?.cwd ?? "";
+  const selectedProject = projects.find((p) => p.id === selectedProjectId);
+  const defaultCwdForNewTerminal =
+    terminals.find((t) => t.id === activeTerminalId)?.cwd ?? selectedProject?.default_cwd ?? "";
+
+  const editingProject = projects.find((p) => p.id === editingProjectId);
 
   const editingTerminal =
     terminalForm?.mode === "edit"
@@ -223,12 +253,22 @@ function App() {
           selectedProjectId={selectedProjectId}
           onSelect={(id) => void runAction(() => handleSelectProject(id))}
           onCreate={(name) => void runAction(() => handleCreateProject(name))}
+          onGoHome={handleGoHome}
         />
         <main className="box-border flex min-h-0 flex-1 flex-col p-6">
-        {!ready ? null : !selectedProjectId ? (
+        {!ready ? null : editingProject ? (
+          <ConfigureProjectPage
+            project={editingProject}
+            onCancel={() => setEditingProjectId(null)}
+            onSubmit={(options) =>
+              void runAction(() => handleUpdateProject(editingProject.id, options))
+            }
+          />
+        ) : !selectedProjectId ? (
           <ProjectDashboard
             projects={projects}
             onOpen={(id) => void runAction(() => handleSelectProject(id))}
+            onEdit={(id) => setEditingProjectId(id)}
           />
         ) : terminalForm?.mode === "create" ? (
           <ConfigureTerminalPage
@@ -251,10 +291,26 @@ function App() {
           />
         ) : (
           <>
-            <div>
+            <div className="mb-2 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                className="btn bg-surface-container-lowest text-ink"
+                onClick={handleGoHome}
+              >
+                <IconArrowLeft />
+                Active Projects
+              </button>
               <h2 className="m-0 font-display text-[2rem] leading-tight font-bold tracking-tight uppercase">
-                {projects.find((p) => p.id === selectedProjectId)?.name}
+                {selectedProject?.name}
               </h2>
+              <button
+                type="button"
+                className="btn ml-auto bg-surface-container-lowest text-ink"
+                onClick={() => setEditingProjectId(selectedProjectId)}
+              >
+                <IconEdit />
+                Edit project
+              </button>
             </div>
             {openedTerminalIds.length === 0 ? (
               terminals.length === 0 ? (

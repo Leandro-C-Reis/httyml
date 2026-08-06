@@ -12,6 +12,16 @@ use crate::terminal::TerminalConfig;
 struct PersistedProject {
     id: String,
     name: String,
+    // All defaulted: state files written before Projects had metadata must
+    // keep loading unchanged.
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    color: Option<String>,
+    #[serde(default)]
+    icon: Option<String>,
+    #[serde(default)]
+    default_cwd: String,
 }
 
 /// The on-disk shape of a Terminal's config (not its live process state,
@@ -60,6 +70,10 @@ pub fn load(path: &Path) -> (Vec<Project>, Vec<(String, TerminalConfig)>) {
         .map(|p| Project {
             id: p.id,
             name: p.name,
+            description: p.description,
+            color: p.color,
+            icon: p.icon,
+            default_cwd: p.default_cwd,
         })
         .collect();
     let terminals = state
@@ -97,6 +111,10 @@ pub fn save(
             .map(|p| PersistedProject {
                 id: p.id.clone(),
                 name: p.name.clone(),
+                description: p.description.clone(),
+                color: p.color.clone(),
+                icon: p.icon.clone(),
+                default_cwd: p.default_cwd.clone(),
             })
             .collect(),
         terminals: terminals

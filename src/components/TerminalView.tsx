@@ -160,6 +160,13 @@ export function TerminalView({
   }, [terminalId]);
 
   const isRunning = state === "Running";
+
+  function startTerminal() {
+    void restartTerminal(terminalId).catch((err) =>
+      onError(err instanceof Error ? err.message : String(err)),
+    );
+  }
+
   const statusColor =
     stateVariant(state) === "running"
       ? "bg-secondary text-on-secondary"
@@ -169,7 +176,7 @@ export function TerminalView({
   const actionBtn = "btn px-3 py-1.5 text-xs";
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <div role="group" aria-label={name} className="flex min-h-0 flex-1 flex-col gap-3">
       {/* <div className="flex items-center gap-3">
         <div className="border-2 p-1 bg-surface-variant text-xs font-bold tracking-wide flex items-center gap-1.5 border-on-surface-variant text-on-surface-variant">
           <span className={`${statusColor} w-2 h-2 rounded-full border border-ink`}></span>
@@ -218,11 +225,7 @@ export function TerminalView({
                 <button
                   type="button"
                   className={`${actionBtn} bg-secondary text-ink`}
-                  onClick={() =>
-                    void restartTerminal(terminalId).catch((err) =>
-                      onError(err instanceof Error ? err.message : String(err)),
-                    )
-                  }
+                  onClick={startTerminal}
                 >
                   <IconPlay />
                   Start
@@ -237,6 +240,33 @@ export function TerminalView({
           <div className="relative min-h-0 flex-1">
             <div className="absolute inset-0 bg-black p-2" data-testid="terminal-view" ref={containerRef} />
             <div className={`scanlines pointer-events-none absolute inset-0 ${!isRunning ? "bg-gray-700" : ""}`} aria-hidden="true" />
+            {/* Sits above the dimmed screen (the scanlines layer is
+                pointer-events-none, so this is the only clickable thing
+                over a dead Terminal) — the header's Start button stays,
+                this is the one you can't miss. */}
+            {!isRunning && (
+              <div
+                data-testid="terminal-idle-overlay"
+                className="absolute inset-0 flex flex-col items-center justify-center gap-3"
+              >
+                <span
+                  data-testid="terminal-status"
+                  data-state={stateVariant(state)}
+                  className={`border-2 border-ink px-2 py-1 font-mono text-xs font-bold tracking-wide uppercase ${statusColor}`}
+                >
+                  {stateLabel(state)}
+                </span>
+                <button
+                  type="button"
+                  aria-label="Start terminal"
+                  className="btn bg-secondary text-ink"
+                  onClick={startTerminal}
+                >
+                  <IconPlay />
+                  Start
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -842,6 +842,67 @@ async fn create_project_and_list_it() {
 }
 
 #[tokio::test]
+async fn update_project_changes_its_name_and_metadata() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("httyml").await;
+
+    client
+        .send(&ClientMessage::UpdateProject {
+            project_id: project_id.clone(),
+            name: "HTTYML".to_string(),
+            description: Some("terminal multiplexer".to_string()),
+            color: Some("pink".to_string()),
+            icon: Some("bolt".to_string()),
+            default_cwd: "/tmp".to_string(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::ProjectUpdated { project } => assert_eq!(project.name, "HTTYML"),
+        other => panic!("expected ProjectUpdated, got {other:?}"),
+    }
+
+    client.send(&ClientMessage::ListProjects).await;
+    let projects = match client.recv().await {
+        DaemonMessage::Projects { projects } => projects,
+        other => panic!("expected Projects, got {other:?}"),
+    };
+
+    assert_eq!(projects.len(), 1);
+    assert_eq!(projects[0].id, project_id);
+    assert_eq!(projects[0].name, "HTTYML");
+    assert_eq!(projects[0].description.as_deref(), Some("terminal multiplexer"));
+    assert_eq!(projects[0].color.as_deref(), Some("pink"));
+    assert_eq!(projects[0].icon.as_deref(), Some("bolt"));
+    assert_eq!(projects[0].default_cwd, "/tmp");
+}
+
+#[tokio::test]
+async fn updating_an_unknown_project_is_an_error() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    client
+        .send(&ClientMessage::UpdateProject {
+            project_id: "nope".to_string(),
+            name: "whatever".to_string(),
+            description: None,
+            color: None,
+            icon: None,
+            default_cwd: String::new(),
+        })
+        .await;
+
+    match client.recv().await {
+        DaemonMessage::Error { message } => assert!(message.contains("nope")),
+        other => panic!("expected Error, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn list_projects_returns_every_created_project() {
     let (_dir, socket_path) = temp_socket_path();
     spawn_daemon(socket_path.clone());
