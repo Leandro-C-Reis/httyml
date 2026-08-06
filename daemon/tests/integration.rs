@@ -309,6 +309,114 @@ async fn resize_changes_the_pty_size_seen_by_the_shell() {
 }
 
 #[tokio::test]
+async fn the_pty_size_survives_a_restart() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: None,
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+
+    client
+        .send(&ClientMessage::Resize {
+            terminal_id: terminal_id.clone(),
+            rows: 45,
+            cols: 133,
+        })
+        .await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    client
+        .send(&ClientMessage::Stop {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_state(TerminalState::Stopped).await;
+    client
+        .send(&ClientMessage::Restart {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    client.expect_state(TerminalState::Running).await;
+
+    client
+        .send(&ClientMessage::Write {
+            terminal_id,
+            data: STANDARD.encode("stty size\n"),
+        })
+        .await;
+
+    client.expect_output_containing("45 133").await;
+}
+
+#[tokio::test]
+async fn the_shell_gets_a_usable_term() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
+            env_vars: std::collections::HashMap::new(),
+            shell: Some("/bin/sh".to_string()),
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: None,
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+
+    client
+        .send(&ClientMessage::Write {
+            terminal_id,
+            data: STANDARD.encode("echo TERM=$TERM\n"),
+        })
+        .await;
+
+    client.expect_output_containing("TERM=xterm-256color").await;
+}
+
+#[tokio::test]
 async fn stop_kills_the_process_and_marks_it_stopped() {
     let (_dir, socket_path) = temp_socket_path();
     spawn_daemon(socket_path.clone());

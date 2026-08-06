@@ -31,8 +31,8 @@ Daemon lives in [daemon/](daemon/) (Rust), built via `scripts/build-daemon-sidec
 
 ## Roadmap
 
-- [ ] Fix TERM environment variable for all shells (currently only bash) `export TERM=xterm-256color`
-- [ ] Fix whiptail size not matching Terminal size (currently only bash)
+- [x] Fix TERM environment variable for all shells (currently only bash) `export TERM=xterm-256color`
+- [x] Fix whiptail size not matching Terminal size (currently only bash)
 - [ ] Terminal resize / font size / wheel zoom
 - [ ] Daemon auto-restart / health check with app-side reconnect banner
 - [ ] Global keyboard shortcuts for Terminal switching

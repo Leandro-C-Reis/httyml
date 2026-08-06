@@ -121,6 +121,15 @@ export function TerminalView({
         unlisten = fn;
         return attachTerminal(terminalId);
       })
+      .then(() => {
+        if (cancelled) return;
+        // The ResizeObserver below only fires on later layout changes, so
+        // without this the daemon would keep its 80x24 default for a
+        // Terminal whose pane never changes size — and any TUI started in
+        // it would draw itself at the wrong size.
+        fitAddon.fit();
+        void resizeTerminal(terminalId, term.rows, term.cols);
+      })
       .catch((err) => {
         onError(err instanceof Error ? err.message : String(err));
       });

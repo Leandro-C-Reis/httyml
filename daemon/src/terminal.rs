@@ -111,6 +111,12 @@ pub struct TerminalHandle {
     /// with the generation that created it (see `LiveProcess::generation`).
     generation: AtomicU64,
     process: Mutex<Option<LiveProcess>>,
+    /// Last size the client reported, kept on the handle (not on
+    /// `LiveProcess`) so a `restart` spawns its PTY already matching the
+    /// visible pane instead of the 80x24 default — a TUI launched from a
+    /// startup command (whiptail, dialog, ...) reads the size once at
+    /// startup and would otherwise draw itself at the wrong size.
+    size: Mutex<(u16, u16)>,
     state: Mutex<TerminalState>,
     pub scrollback: Arc<Mutex<Scrollback>>,
     pub tx: broadcast::Sender<Vec<u8>>,
@@ -120,6 +126,14 @@ pub struct TerminalHandle {
 impl TerminalHandle {
     const SHELL_FALLBACK_PATH: &'static str =
         "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+    /// (rows, cols) used until the client reports its actual pane size.
+    const DEFAULT_SIZE: (u16, u16) = (24, 80);
+    /// The PTY is a real terminal emulator (xterm.js) on the other end, but
+    /// the daemon is a sidecar whose own `TERM` is whatever the desktop
+    /// launcher happened to export (often unset, or `dumb`). Without this
+    /// only shells that set `TERM` themselves in their rc files came out
+    /// right, and everything else (ncurses TUIs, colours) misbehaved.
+    const DEFAULT_TERM: &'static str = "xterm-256color";
 
     /// Builds a Terminal from config without starting a process — always
     /// `Stopped` until `start_process` runs. Shared by `spawn` (which starts
@@ -138,6 +152,7 @@ impl TerminalHandle {
             lifecycle: Mutex::new(()),
             generation: AtomicU64::new(0),
             process: Mutex::new(None),
+            size: Mutex::new(Self::DEFAULT_SIZE),
             state: Mutex::new(TerminalState::Stopped),
             scrollback,
             tx,
@@ -262,10 +277,12 @@ impl TerminalHandle {
         // lock held — `update_config` must never block on a slow spawn.
         let cfg = self.config.lock().unwrap().clone();
 
+        let (rows, cols) = *self.size.lock().unwrap();
+
         let pty_system = native_pty_system();
         let pair = pty_system.openpty(PtySize {
-            rows: 24,
-            cols: 80,
+            rows,
+            cols,
             pixel_width: 0,
             pixel_height: 0,
         })?;
@@ -279,6 +296,8 @@ impl TerminalHandle {
             .unwrap_or_else(|| "/bin/sh".to_string());
         let mut cmd = CommandBuilder::new(shell);
         Self::sanitize_inherited_runtime_env(&mut cmd);
+        // Before `cfg.env_vars` so a Terminal's own `TERM` still wins.
+        cmd.env("TERM", Self::DEFAULT_TERM);
         let cwd = if cfg.cwd.is_empty() {
             std::env::var("HOME").unwrap_or_else(|_| "/".to_string())
         } else {
@@ -418,7 +437,13 @@ impl TerminalHandle {
         Ok(())
     }
 
+    /// Records the size even when nothing is running, so the next
+    /// `start_process` opens its PTY at the size the client last reported
+    /// (see the `size` field).
     pub fn resize(&self, rows: u16, cols: u16) -> anyhow::Result<()> {
+        if rows > 0 && cols > 0 {
+            *self.size.lock().unwrap() = (rows, cols);
+        }
         let process = self.process.lock().unwrap();
         let live = process.as_ref().ok_or_else(|| self.not_running())?;
         live.master.resize(PtySize {
