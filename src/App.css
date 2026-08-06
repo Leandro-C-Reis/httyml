@@ -91,14 +91,15 @@
      flush with the shell, like a divider tab pulled forward out of a stack
      of cards. */
   .tab {
-    @apply relative top-1 border-2 border-b-0 border-ink bg-surface-container-lowest px-4 pt-2 pb-1.5 font-mono text-sm font-bold tracking-wide text-ink uppercase transition-colors duration-100 cursor-pointer;
+    @apply relative top-1 border-2 border-ink bg-surface-container-lowest px-4 pt-2 pb-1.5 font-mono text-sm font-bold tracking-wide text-ink uppercase transition-colors duration-100 cursor-pointer
+    flex items-center gap-1.5;
   }
   .tab:hover {
     @apply bg-surface-variant;
   }
   .tab--active,
   .tab--active:hover {
-    @apply z-10 border-[3px] border-b-0 bg-secondary px-[18px] pt-2.5 pb-2 text-on-secondary;
+    @apply z-10 border-[3px] bg-secondary  text-[#4B6700];
   }
 
   /* A restrained nod to a CRT over the live shell output — the two-layer

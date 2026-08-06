@@ -93,3 +93,12 @@ export function IconArrowRight({ className }: IconProps) {
     </svg>
   );
 }
+
+export function IconTerminal({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path d="M2 3h12v10H2Z" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <path d="M4 6l2 2-2 2M7.5 10h4" stroke="currentColor" strokeWidth="1.5" fill="none" />
+    </svg>
+  );
+}

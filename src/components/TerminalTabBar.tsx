@@ -1,5 +1,5 @@
 import type { TerminalInfo } from "../lib/daemon";
-import { IconPlus } from "./icons";
+import { IconPlus, IconTerminal } from "./icons";
 
 type TerminalTabBarProps = {
   terminals: TerminalInfo[];
@@ -23,6 +23,7 @@ export function TerminalTabBar({ terminals, activeTerminalId, onSelect, onAdd }:
             className={isActive ? "tab tab--active" : "tab"}
             onClick={() => onSelect(terminal.id)}
           >
+            <IconTerminal/>
             {label}
           </button>
         );

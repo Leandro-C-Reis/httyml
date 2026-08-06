@@ -224,7 +224,7 @@ function App() {
           onSelect={(id) => void runAction(() => handleSelectProject(id))}
           onCreate={(name) => void runAction(() => handleCreateProject(name))}
         />
-        <main className="box-border flex min-h-0 flex-1 flex-col gap-4 p-6">
+        <main className="box-border flex min-h-0 flex-1 flex-col p-6">
         {!ready ? null : !selectedProjectId ? (
           <ProjectDashboard
             projects={projects}
@@ -251,11 +251,7 @@ function App() {
           />
         ) : (
           <>
-            <div className="mb-2">
-              <p className="mb-1 flex items-center gap-2 font-mono text-xs font-bold tracking-wide text-primary uppercase">
-                <span className="h-2 w-2 rounded-full border border-ink bg-secondary" />
-                System online
-              </p>
+            <div>
               <h2 className="m-0 font-display text-[2rem] leading-tight font-bold tracking-tight uppercase">
                 {projects.find((p) => p.id === selectedProjectId)?.name}
               </h2>

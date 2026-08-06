@@ -169,11 +169,8 @@ export function TerminalView({
   const actionBtn = "btn px-3 py-1.5 text-xs";
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className="flex items-center gap-3">
-        <h2 className="m-0 font-display text-2xl font-bold tracking-tight uppercase">{name}</h2>
-      </div>
-      <div className="flex items-center gap-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {/* <div className="flex items-center gap-3">
         <div className="border-2 p-1 bg-surface-variant text-xs font-bold tracking-wide flex items-center gap-1.5 border-on-surface-variant text-on-surface-variant">
           <span className={`${statusColor} w-2 h-2 rounded-full border border-ink`}></span>
           <span
@@ -183,14 +180,14 @@ export function TerminalView({
             {stateLabel(state).toUpperCase()}
           </span>
         </div>
-      </div>
+      </div> */}
+      <TerminalTabBar
+        terminals={tabs}
+        activeTerminalId={activeTerminalId}
+        onSelect={onSelectTab}
+        onAdd={onAddTab}
+      />
       <div className="flex min-h-0 flex-1 flex-col">
-        <TerminalTabBar
-          terminals={tabs}
-          activeTerminalId={activeTerminalId}
-          onSelect={onSelectTab}
-          onAdd={onAddTab}
-        />
         <div className="card flex min-h-0 flex-1 flex-col">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b-[4px] border-ink bg-surface-variant px-3 py-2">
             <div className="flex items-center gap-2">
