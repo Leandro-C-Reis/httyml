@@ -6,10 +6,12 @@ import {
   ensureDaemon,
   listProjects,
   listTerminals,
+  setProjectScripts,
   stopTerminal,
   updateProject,
   updateTerminal,
   type CreateTerminalOptions,
+  type ProjectScript,
   type UpdateProjectOptions,
   type ProjectInfo,
   type TerminalInfo,
@@ -161,6 +163,12 @@ function App() {
     setTerminalForm(null);
     setEditingProjectId(null);
     latestProjectRequest.current = null;
+  }
+
+  async function handleSetProjectScripts(scripts: ProjectScript[]) {
+    if (!selectedProjectId) return;
+    const updated = await setProjectScripts(selectedProjectId, scripts);
+    setProjects((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
   }
 
   async function handleUpdateProject(projectId: string, options: UpdateProjectOptions) {
@@ -404,7 +412,7 @@ function App() {
           onCreate={(name) => void runAction(() => handleCreateProject(name))}
           onGoHome={handleGoHome}
         />
-        <main className="box-border flex min-h-0 flex-1 flex-col p-6">
+        <main className="box-border flex min-h-0 flex-1 flex-col bg-[rgb(238,238,238)] bg-[repeating-linear-gradient(45deg,rgb(226,226,226)_0px,rgb(226,226,226)_1px,transparent_0px,transparent_50%)] bg-[length:10px_10px] p-6">
         {!ready ? null : editingProject ? (
           <ConfigureProjectPage
             project={editingProject}
@@ -498,6 +506,10 @@ function App() {
                         onSelectTab={openTerminal}
                         onAddTab={() => setTerminalForm({ mode: "create" })}
                         isMovingTab={isMovingTab}
+                        scripts={selectedProject?.scripts ?? []}
+                        onScriptsChange={(scripts) =>
+                          void runAction(() => handleSetProjectScripts(scripts))
+                        }
                         onError={setError}
                       />
                     </div>

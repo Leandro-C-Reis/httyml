@@ -3,6 +3,24 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 export type TerminalState = "Running" | "Stopped" | { Exited: { exit_code: number } };
 
+/// One optional argument of a saved script. `flag` (when set) is prepended
+/// to the value; a blank value drops the argument from the command line
+/// entirely — see `buildScriptCommand`.
+export type ScriptArg = {
+  name: string;
+  label: string;
+  flag: string | null;
+  default_value: string;
+};
+
+export type ProjectScript = {
+  id: string;
+  name: string;
+  /// May contain `{arg-name}` placeholders filled in from `args`.
+  command: string;
+  args: ScriptArg[];
+};
+
 export type ProjectInfo = {
   id: string;
   name: string;
@@ -11,6 +29,7 @@ export type ProjectInfo = {
   icon: string | null;
   /// Prefills the cwd of a newly created Terminal; empty means no default.
   default_cwd: string;
+  scripts: ProjectScript[];
 };
 
 export type UpdateProjectOptions = {
@@ -62,6 +81,19 @@ export async function updateProject(
     icon: options.icon,
     defaultCwd: options.defaultCwd,
   });
+}
+
+export async function setProjectScripts(
+  projectId: string,
+  scripts: ProjectScript[],
+): Promise<ProjectInfo> {
+  return invoke<ProjectInfo>("set_project_scripts", { projectId, scripts });
+}
+
+/// `[name, command]` pairs from `<cwd>/package.json`. Empty when there's no
+/// package.json there, or it has no scripts — never an error.
+export async function readPackageScripts(cwd: string): Promise<[string, string][]> {
+  return invoke<[string, string][]>("read_package_scripts", { cwd });
 }
 
 export async function listProjects(): Promise<ProjectInfo[]> {

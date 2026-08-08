@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::project::ProjectScript;
 use crate::terminal::TerminalState;
 
 /// Messages the app sends to the Daemon over the Unix socket.
@@ -25,6 +26,12 @@ pub enum ClientMessage {
         icon: Option<String>,
         #[serde(default)]
         default_cwd: String,
+    },
+    /// Replaces a Project's saved scripts wholesale — the app owns their
+    /// order and identity, the Daemon only stores them.
+    SetProjectScripts {
+        project_id: String,
+        scripts: Vec<ProjectScript>,
     },
     ListProjects,
     ListTerminals {
@@ -114,6 +121,8 @@ pub struct ProjectInfo {
     pub icon: Option<String>,
     #[serde(default)]
     pub default_cwd: String,
+    #[serde(default)]
+    pub scripts: Vec<ProjectScript>,
 }
 
 /// A Terminal as listed to the app, scoped to a Project. Carries its full

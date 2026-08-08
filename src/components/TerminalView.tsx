@@ -12,12 +12,14 @@ import {
   stopTerminal,
   writeTerminal,
   type DaemonMessage,
+  type ProjectScript,
   type TerminalInfo,
   type TerminalState,
 } from "../lib/daemon";
 import { IconEdit, IconFolder, IconPlay, IconStop, IconTrash } from "./icons";
 import { TerminalTabBar } from "./TerminalTabBar";
 import { ShortcutGuide } from "./ShortcutGuide";
+import { TerminalSideMenu } from "./TerminalSideMenu";
 
 type TerminalViewProps = {
   terminalId: string;
@@ -32,6 +34,9 @@ type TerminalViewProps = {
   /// Alt+M's move mode (owned by App) — passed straight through to the
   /// shortcut guide below the Terminal.
   isMovingTab?: boolean;
+  /// The Project's saved scripts, for the side menu.
+  scripts: ProjectScript[];
+  onScriptsChange: (scripts: ProjectScript[]) => void;
   // Surfaces a failure that isn't tied to a discrete click the App-level
   // `runAction` wrapper could catch: attach happens inside this
   // component's own mount effect, and a failed Stop/Start shouldn't just
@@ -62,6 +67,8 @@ export function TerminalView({
   onSelectTab,
   onAddTab,
   isMovingTab,
+  scripts,
+  onScriptsChange,
   onError,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -268,10 +275,6 @@ export function TerminalView({
           <div className="relative min-h-0 flex-1">
             <div className="absolute inset-0 bg-black p-2" data-testid="terminal-view" ref={containerRef} />
             <div className={`scanlines pointer-events-none absolute inset-0 ${!isRunning ? "bg-gray-700" : ""}`} aria-hidden="true" />
-            {/* Sits above the dimmed screen (the scanlines layer is
-                pointer-events-none, so this is the only clickable thing
-                over a dead Terminal) — the header's Start button stays,
-                this is the one you can't miss. */}
             {!isRunning && (
               <div
                 data-testid="terminal-idle-overlay"
@@ -295,6 +298,19 @@ export function TerminalView({
                 </button>
               </div>
             )}
+            <TerminalSideMenu
+              cwd={cwd}
+              scripts={scripts}
+              onScriptsChange={onScriptsChange}
+              onRun={(command) => {
+                // Typed into the shell exactly as a user would, newline and
+                // all — a script is just a command line, not a side channel.
+                void writeTerminal(terminalId, `${command}\n`).catch((err) =>
+                  onError(err instanceof Error ? err.message : String(err)),
+                );
+              }}
+              onError={onError}
+            />
           </div>
         </div>
       </div>

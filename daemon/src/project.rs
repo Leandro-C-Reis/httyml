@@ -1,5 +1,40 @@
+use serde::{Deserialize, Serialize};
+
+/// One optional command-line argument of a `ProjectScript`. The Daemon
+/// never builds the command line itself — the app substitutes these into
+/// `ProjectScript::command` and writes the result to a Terminal — so these
+/// are plain data here.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScriptArg {
+    /// Placeholder name as it appears in the command (`{name}`).
+    pub name: String,
+    /// What the app shows next to the input.
+    pub label: String,
+    /// Prepended to the value when it's filled in (e.g. `--exclude`).
+    /// `None`/empty substitutes the bare value.
+    #[serde(default)]
+    pub flag: Option<String>,
+    /// Prefills the input; empty means the argument starts blank and, left
+    /// blank, drops out of the command entirely.
+    #[serde(default)]
+    pub default_value: String,
+}
+
+/// A saved bash script belonging to a Project, runnable in any of its
+/// Terminals. `command` may contain `{arg-name}` placeholders filled in
+/// from `args` at run time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectScript {
+    pub id: String,
+    pub name: String,
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<ScriptArg>,
+}
+
 /// A Project: a name grouping Terminals together, plus presentation-only
-/// metadata (colour, icon, description) and an optional `default_cwd`.
+/// metadata (colour, icon, description), an optional `default_cwd`, and the
+/// scripts saved for it.
 ///
 /// `default_cwd` is *not* a project root: it only prefills the cwd field
 /// when creating a Terminal, and each Terminal still owns its own cwd
@@ -16,6 +51,8 @@ pub struct Project {
     pub icon: Option<String>,
     /// Empty means "no default" — the app falls back to its own behaviour.
     pub default_cwd: String,
+    /// Saved scripts, in the order the app shows them.
+    pub scripts: Vec<ProjectScript>,
 }
 
 impl Project {
@@ -29,6 +66,7 @@ impl Project {
             color: None,
             icon: None,
             default_cwd: String::new(),
+            scripts: Vec::new(),
         }
     }
 }

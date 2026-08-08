@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::project::Project;
+use crate::project::{Project, ProjectScript};
 use crate::terminal::TerminalConfig;
 
 /// The on-disk shape of a Project — deliberately separate from `Project`
@@ -22,6 +22,8 @@ struct PersistedProject {
     icon: Option<String>,
     #[serde(default)]
     default_cwd: String,
+    #[serde(default)]
+    scripts: Vec<ProjectScript>,
 }
 
 /// The on-disk shape of a Terminal's config (not its live process state,
@@ -74,6 +76,7 @@ pub fn load(path: &Path) -> (Vec<Project>, Vec<(String, TerminalConfig)>) {
             color: p.color,
             icon: p.icon,
             default_cwd: p.default_cwd,
+            scripts: p.scripts,
         })
         .collect();
     let terminals = state
@@ -115,6 +118,7 @@ pub fn save(
                 color: p.color.clone(),
                 icon: p.icon.clone(),
                 default_cwd: p.default_cwd.clone(),
+                scripts: p.scripts.clone(),
             })
             .collect(),
         terminals: terminals

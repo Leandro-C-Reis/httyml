@@ -192,3 +192,30 @@ export function IconDice({ className }: IconProps) {
     </svg>
   );
 }
+
+export function IconPackageJson({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" width="20" height="20" aria-hidden="true">
+      <path
+        d="M8 1.5 13.5 4.7V11.3L8 14.5 2.5 11.3V4.7Z"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        fill="none"
+      />
+      <g transform="translate(8 8) scale(0.82) translate(-8 -8)">
+        <path
+          d="M5.4 5.4h2.3v4.1c0 1.1-.7 1.9-1.9 1.9-.9 0-1.6-.5-1.8-1.3"
+          stroke="currentColor"
+          strokeWidth="1.2"
+          fill="none"
+        />
+        <path
+          d="M10.8 6.1c-.3-.4-.8-.6-1.4-.6-.8 0-1.3.4-1.3 1 0 .6.6.8 1.4 1 .9.2 1.7.5 1.7 1.6 0 1.1-.9 1.8-2.2 1.8-.9 0-1.7-.3-2.2-.9"
+          stroke="currentColor"
+          strokeWidth="1.2"
+          fill="none"
+        />
+      </g>
+    </svg>
+  );
+}

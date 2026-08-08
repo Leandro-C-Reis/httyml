@@ -3,6 +3,7 @@ use std::time::Duration;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use httyml_daemon::framing::{read_frame, write_frame};
+use httyml_daemon::project::{ProjectScript, ScriptArg};
 use httyml_daemon::protocol::{ClientMessage, DaemonMessage};
 use httyml_daemon::terminal::TerminalState;
 use tokio::net::UnixStream;
@@ -877,6 +878,54 @@ async fn update_project_changes_its_name_and_metadata() {
     assert_eq!(projects[0].color.as_deref(), Some("pink"));
     assert_eq!(projects[0].icon.as_deref(), Some("bolt"));
     assert_eq!(projects[0].default_cwd, "/tmp");
+}
+
+#[tokio::test]
+async fn project_scripts_are_stored_and_survive_a_daemon_restart() {
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("projects.json");
+    let socket_a = config_dir.path().join("daemon-a.sock");
+    spawn_daemon_with_config(socket_a.clone(), config_path.clone());
+
+    let mut client = TestClient::connect(&socket_a).await;
+    let project_id = client.create_project("httyml").await;
+
+    let script = ProjectScript {
+        id: "s1".to_string(),
+        name: "Sync".to_string(),
+        command: "rsync -a {source} /backup".to_string(),
+        args: vec![ScriptArg {
+            name: "source".to_string(),
+            label: "Source folder".to_string(),
+            flag: None,
+            default_value: "/data".to_string(),
+        }],
+    };
+    client
+        .send(&ClientMessage::SetProjectScripts {
+            project_id: project_id.clone(),
+            scripts: vec![script],
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::ProjectUpdated { project } => assert_eq!(project.scripts.len(), 1),
+        other => panic!("expected ProjectUpdated, got {other:?}"),
+    }
+
+    // A fresh Registry loading the same config file — as if the Daemon
+    // process had restarted (same setup as `config_survives_a_daemon_restart`).
+    let socket_b = config_dir.path().join("daemon-b.sock");
+    spawn_daemon_with_config(socket_b.clone(), config_path.clone());
+    let mut client = TestClient::connect(&socket_b).await;
+    client.send(&ClientMessage::ListProjects).await;
+    let projects = match client.recv().await {
+        DaemonMessage::Projects { projects } => projects,
+        other => panic!("expected Projects, got {other:?}"),
+    };
+    let scripts = &projects[0].scripts;
+    assert_eq!(scripts.len(), 1);
+    assert_eq!(scripts[0].command, "rsync -a {source} /backup");
+    assert_eq!(scripts[0].args[0].default_value, "/data");
 }
 
 #[tokio::test]

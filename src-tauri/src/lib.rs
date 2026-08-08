@@ -5,6 +5,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use httyml_daemon::default_socket_path;
 use httyml_daemon::framing::{read_frame, write_frame};
+use httyml_daemon::project::ProjectScript;
 use httyml_daemon::protocol::{ClientMessage, DaemonMessage, ProjectInfo, TerminalInfo};
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_shell::ShellExt;
@@ -173,6 +174,52 @@ async fn update_project(
         DaemonMessage::Error { message } => Err(message),
         _ => Err("unexpected response from daemon".to_string()),
     }
+}
+
+#[tauri::command]
+async fn set_project_scripts(
+    project_id: String,
+    scripts: Vec<ProjectScript>,
+) -> Result<ProjectInfo, String> {
+    match send_one(ClientMessage::SetProjectScripts {
+        project_id,
+        scripts,
+    })
+    .await?
+    {
+        DaemonMessage::ProjectUpdated { project } => Ok(project),
+        DaemonMessage::Error { message } => Err(message),
+        _ => Err("unexpected response from daemon".to_string()),
+    }
+}
+
+/// Reads the `scripts` block of `<cwd>/package.json`, for the side menu's
+/// "scripts found in this directory" panel. A missing or unparsable file is
+/// an empty list, not an error: a Terminal sitting in a directory without a
+/// package.json is the normal case, not a failure.
+#[tauri::command]
+async fn read_package_scripts(cwd: String) -> Result<Vec<(String, String)>, String> {
+    if cwd.is_empty() {
+        return Ok(Vec::new());
+    }
+    let path = std::path::Path::new(&cwd).join("package.json");
+    let Ok(bytes) = std::fs::read(&path) else {
+        return Ok(Vec::new());
+    };
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return Ok(Vec::new());
+    };
+    let Some(scripts) = json.get("scripts").and_then(|s| s.as_object()) else {
+        return Ok(Vec::new());
+    };
+    Ok(scripts
+        .iter()
+        .filter_map(|(name, command)| {
+            command
+                .as_str()
+                .map(|command| (name.clone(), command.to_string()))
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -447,6 +494,8 @@ pub fn run() {
             ensure_daemon,
             create_project,
             update_project,
+            set_project_scripts,
+            read_package_scripts,
             list_projects,
             list_terminals,
             create_terminal,

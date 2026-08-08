@@ -66,6 +66,8 @@ function renderTerminalView(overrides: Partial<Parameters<typeof TerminalView>[0
       terminalId="abc123"
       name="Terminal 1"
       cwd="/home/dev/project"
+      scripts={[]}
+      onScriptsChange={vi.fn()}
       onEdit={onEdit}
       onDelete={onDelete}
       tabs={[

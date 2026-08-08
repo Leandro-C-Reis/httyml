@@ -12,13 +12,22 @@ vi.mock("./lib/daemon", () => ({
   createTerminal: vi.fn(),
   deleteTerminal: vi.fn().mockResolvedValue(undefined),
   stopTerminal: vi.fn().mockResolvedValue(undefined),
+  setProjectScripts: vi.fn(),
   updateProject: vi.fn(),
 }));
 
 // Projects carry presentation metadata (colour, icon, ...) that none of
 // these tests care about — this keeps them to the fields they assert on.
 function project(id: string, name: string): daemon.ProjectInfo {
-  return { id, name, description: null, color: null, icon: null, default_cwd: "" };
+  return {
+    id,
+    name,
+    description: null,
+    color: null,
+    icon: null,
+    default_cwd: "",
+    scripts: [],
+  };
 }
 
 vi.mock("./components/TerminalView", () => ({

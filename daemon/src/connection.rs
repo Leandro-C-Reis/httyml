@@ -71,6 +71,7 @@ fn project_info(project: &Project) -> ProjectInfo {
         color: project.color.clone(),
         icon: project.icon.clone(),
         default_cwd: project.default_cwd.clone(),
+        scripts: project.scripts.clone(),
     }
 }
 
@@ -242,6 +243,33 @@ async fn handle_message(
                     }
                     None => None,
                 }
+            };
+            match updated {
+                Some(project) => {
+                    persist(registry);
+                    send(writer, &DaemonMessage::ProjectUpdated { project }).await?;
+                }
+                None => {
+                    send(
+                        writer,
+                        &DaemonMessage::Error {
+                            message: format!("unknown project {project_id}"),
+                        },
+                    )
+                    .await?;
+                }
+            }
+        }
+        ClientMessage::SetProjectScripts {
+            project_id,
+            scripts,
+        } => {
+            let updated = {
+                let mut projects = registry.projects.lock().unwrap();
+                projects.get_mut(&project_id).map(|project| {
+                    project.scripts = scripts;
+                    project_info(project)
+                })
             };
             match updated {
                 Some(project) => {
