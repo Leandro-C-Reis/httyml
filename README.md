@@ -31,17 +31,17 @@ Daemon lives in [daemon/](daemon/) (Rust), built via `scripts/build-daemon-sidec
 
 ## Roadmap
 
-- [x] Fix TERM environment variable for all shells (currently only bash) `export TERM=xterm-256color`
-- [x] Fix whiptail size not matching Terminal size (currently only bash)
-- [ ] Terminal resize / font size / wheel zoom
-- [ ] Daemon auto-restart / health check with app-side reconnect banner
-- [ ] Global keyboard shortcuts for Terminal switching
-- [ ] Export/import Project + Terminal configs as JSON
-- [ ] Themeable terminal color schemes
-- [ ] Automated build release for Linux (Tauri)
-- [ ] Project templates (predefined Terminal set with cwd/startup command)
-- [ ] Per-Terminal notifications on process exit or pattern match (e.g. "Build failed")
-- [ ] Layout presets — split panes, grid view for multiple Terminals at once
-- [ ] Remote Daemon support (opt-in, currently local-only by design — see ADR-0005)
-- [ ] Terminal search / fuzzy jump across all Projects
-- [ ] Session recording + replay of Terminal output
+- [x] 1. Fix TERM environment variable for all shells (currently only bash) `export TERM=xterm-256color`
+- [x] 2. Fix whiptail size not matching Terminal size (currently only bash)
+- [ ] 3. Terminal resize / font size / wheel zoom
+- [ ] 4. Daemon auto-restart / health check with app-side reconnect banner
+- [x] 5. Global keyboard shortcuts for Terminal switching
+- [ ] 6. Export/import Project + Terminal configs as JSON
+- [ ] 7. Themeable terminal color schemes
+- [ ] 8. Automated build release for Linux (Tauri)
+- [ ] 9. Project templates (predefined Terminal set with cwd/startup command)
+- [ ] 10. Per-Terminal notifications on process exit or pattern match (e.g. "Build failed")
+- [ ] 11. Layout presets — split panes, grid view for multiple Terminals at once
+- [ ] 12. Remote Daemon support (opt-in, currently local-only by design — see ADR-0005)
+- [ ] 13. Terminal search / fuzzy jump across all Projects
+- [ ] 14. Session recording + replay of Terminal output

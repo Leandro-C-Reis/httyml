@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { TerminalView } from "./TerminalView";
 import * as daemon from "../lib/daemon";
@@ -243,6 +243,23 @@ describe("TerminalView", () => {
 
     const startButton = screen.getByRole("button", { name: "Start terminal" });
     await userEvent.click(startButton);
+    expect(daemon.restartTerminal).toHaveBeenCalledWith("abc123");
+  });
+
+  it("starts a stopped Terminal when Enter is pressed", async () => {
+    renderTerminalView();
+    await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());
+    const handleMessage = vi.mocked(daemon.onTerminalOutput).mock.calls[0][1];
+
+    // Running: Enter belongs to the shell, not to us.
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(daemon.restartTerminal).not.toHaveBeenCalled();
+
+    act(() => {
+      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Stopped" });
+    });
+
+    fireEvent.keyDown(window, { key: "Enter" });
     expect(daemon.restartTerminal).toHaveBeenCalledWith("abc123");
   });
 

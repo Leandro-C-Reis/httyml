@@ -10,6 +10,8 @@ vi.mock("./lib/daemon", () => ({
   createProject: vi.fn(),
   listTerminals: vi.fn().mockResolvedValue([]),
   createTerminal: vi.fn(),
+  deleteTerminal: vi.fn().mockResolvedValue(undefined),
+  stopTerminal: vi.fn().mockResolvedValue(undefined),
   updateProject: vi.fn(),
 }));
 
@@ -22,14 +24,20 @@ function project(id: string, name: string): daemon.ProjectInfo {
 vi.mock("./components/TerminalView", () => ({
   TerminalView: ({
     terminalId,
+    activeTerminalId,
     tabs,
     onAddTab,
   }: {
     terminalId: string;
+    activeTerminalId: string | null;
     tabs: { id: string; name: string | null }[];
     onAddTab: () => void;
   }) => (
-    <div data-testid="terminal-view-stub">
+    // Every opened Terminal stays mounted (App only hides the inactive
+    // ones), so the active one carries a testid of its own.
+    <div
+      data-testid={terminalId === activeTerminalId ? "active-terminal-view" : "terminal-view-stub"}
+    >
       {terminalId}
       <ul aria-label="tab order">
         {tabs.map((t) => (
@@ -57,7 +65,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText(/active projects/i)).toBeInTheDocument();
     });
-    expect(screen.queryByTestId("terminal-view-stub")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("active-terminal-view")).not.toBeInTheDocument();
   });
 
   it("shows a New Terminal prompt — no inline create form — for an empty project", async () => {
@@ -81,7 +89,7 @@ describe("App", () => {
     await userEvent.click(backButtons[backButtons.length - 1]);
 
     expect(await screen.findByRole("button", { name: /open project/i })).toBeInTheDocument();
-    expect(screen.queryByTestId("terminal-view-stub")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("active-terminal-view")).not.toBeInTheDocument();
   });
 
   it("edits a Project's name and metadata from the dashboard", async () => {
@@ -165,7 +173,112 @@ describe("App", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: /open project/i }));
 
-    expect(await screen.findByTestId("terminal-view-stub")).toHaveTextContent("t1");
+    expect(await screen.findByTestId("active-terminal-view")).toHaveTextContent("t1");
+  });
+
+  it("switches Terminals with Alt shortcuts", async () => {
+    vi.mocked(daemon.listProjects).mockResolvedValue([project("p1", "Web Dev")]);
+    const t1 = {
+      id: "t1",
+      name: "Terminal 1",
+      cwd: "/home/dev",
+      startup_command: null,
+      env_vars: {},
+      shell: null,
+      scrollback_lines: 10000,
+      state: "Running" as const,
+    };
+    vi.mocked(daemon.listTerminals).mockResolvedValue([t1, { ...t1, id: "t2", name: "Terminal 2" }]);
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /open project/i }));
+    await waitFor(() => expect(screen.getByTestId("active-terminal-view")).toHaveTextContent("t1"));
+
+    fireEvent.keyDown(window, { code: "ArrowRight", altKey: true });
+    await waitFor(() => expect(screen.getByTestId("active-terminal-view")).toHaveTextContent("t2"));
+
+    // Wraps around past the last tab.
+    fireEvent.keyDown(window, { code: "ArrowRight", altKey: true });
+    await waitFor(() => expect(screen.getByTestId("active-terminal-view")).toHaveTextContent("t1"));
+
+    fireEvent.keyDown(window, { code: "ArrowLeft", altKey: true });
+    await waitFor(() => expect(screen.getByTestId("active-terminal-view")).toHaveTextContent("t2"));
+
+    // Alt+T creates straight away, with the defaults the Configure page
+    // would have shown — no form in between.
+    vi.mocked(daemon.createTerminal).mockResolvedValue("t3");
+    fireEvent.keyDown(window, { code: "KeyT", altKey: true });
+    await waitFor(() =>
+      expect(daemon.createTerminal).toHaveBeenCalledWith("p1", "/home/dev", {
+        name: "Terminal 3",
+      }),
+    );
+    expect(screen.queryByRole("form", { name: /create terminal/i })).not.toBeInTheDocument();
+  });
+
+  it("stops, edits and reorders the active Terminal from the keyboard", async () => {
+    vi.mocked(daemon.listProjects).mockResolvedValue([project("p1", "Web Dev")]);
+    const t1 = {
+      id: "t1",
+      name: "Terminal 1",
+      cwd: "/home/dev",
+      startup_command: null,
+      env_vars: {},
+      shell: null,
+      scrollback_lines: 10000,
+      state: "Running" as const,
+    };
+    vi.mocked(daemon.listTerminals).mockResolvedValue([t1, { ...t1, id: "t2", name: "Terminal 2" }]);
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /open project/i }));
+    await waitFor(() => expect(screen.getByTestId("active-terminal-view")).toHaveTextContent("t1"));
+
+    fireEvent.keyDown(window, { code: "KeyQ", altKey: true });
+    await waitFor(() => expect(daemon.stopTerminal).toHaveBeenCalledWith("t1"));
+
+    // Alt+M turns the bare arrows into "move this tab", so the active
+    // Terminal changes position without the selection following the arrow.
+    fireEvent.keyDown(window, { code: "KeyM", altKey: true });
+    fireEvent.keyDown(window, { code: "ArrowRight" });
+    await waitFor(() => {
+      const order = within(screen.getByLabelText("tab order"))
+        .getAllByRole("listitem")
+        .map((el) => el.textContent);
+      expect(order).toEqual(["Terminal 2", "Terminal 1"]);
+    });
+    expect(screen.getByTestId("active-terminal-view")).toHaveTextContent("t1");
+
+    fireEvent.keyDown(window, { code: "Escape" });
+
+    fireEvent.keyDown(window, { code: "KeyE", altKey: true });
+    expect(await screen.findByRole("form", { name: /edit terminal/i })).toBeInTheDocument();
+  });
+
+  it("deletes the active Terminal with Alt+Del", async () => {
+    vi.mocked(daemon.listProjects).mockResolvedValue([project("p1", "Web Dev")]);
+    const t1 = {
+      id: "t1",
+      name: "Terminal 1",
+      cwd: "/home/dev",
+      startup_command: null,
+      env_vars: {},
+      shell: null,
+      scrollback_lines: 10000,
+      state: "Running" as const,
+    };
+    vi.mocked(daemon.listTerminals).mockResolvedValue([t1, { ...t1, id: "t2", name: "Terminal 2" }]);
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /open project/i }));
+    await waitFor(() => expect(screen.getByTestId("active-terminal-view")).toHaveTextContent("t1"));
+
+    // The remaining Terminal takes over, same as clicking Remove.
+    vi.mocked(daemon.listTerminals).mockResolvedValue([{ ...t1, id: "t2", name: "Terminal 2" }]);
+    fireEvent.keyDown(window, { code: "Delete", altKey: true });
+
+    await waitFor(() => expect(daemon.deleteTerminal).toHaveBeenCalledWith("t1"));
+    await waitFor(() => expect(screen.getByTestId("active-terminal-view")).toHaveTextContent("t2"));
   });
 
   it("keeps a Project's tab order stable across switching away and back, even if the daemon reorders its listing", async () => {
@@ -210,10 +323,10 @@ describe("App", () => {
     expect(order).toEqual(["Terminal 1", "Terminal 2"]);
 
     await userEvent.click(screen.getByRole("button", { name: "Project B" }));
-    await waitFor(() => expect(screen.getByTestId("terminal-view-stub")).toHaveTextContent("t3"));
+    await waitFor(() => expect(screen.getByTestId("active-terminal-view")).toHaveTextContent("t3"));
 
     await userEvent.click(screen.getByRole("button", { name: "Project A" }));
-    await waitFor(() => expect(screen.getByTestId("terminal-view-stub")).toHaveTextContent("t1"));
+    await waitFor(() => expect(screen.getByTestId("active-terminal-view")).toHaveTextContent("t1"));
     order = within(screen.getByLabelText("tab order"))
       .getAllByRole("listitem")
       .map((el) => el.textContent);
@@ -238,7 +351,7 @@ describe("App", () => {
 
     // Opening the Project auto-selects its (only) Terminal.
     await userEvent.click(await screen.findByRole("button", { name: /open project/i }));
-    await screen.findByTestId("terminal-view-stub");
+    await screen.findByTestId("active-terminal-view");
 
     await userEvent.click(screen.getByRole("button", { name: /new terminal/i }));
     await userEvent.click(screen.getByText(/advanced/i));

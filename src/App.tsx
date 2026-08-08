@@ -6,6 +6,7 @@ import {
   ensureDaemon,
   listProjects,
   listTerminals,
+  stopTerminal,
   updateProject,
   updateTerminal,
   type CreateTerminalOptions,
@@ -55,6 +56,9 @@ function App() {
   // dashboard card and from the open Project's header, so it's kept
   // independent of `selectedProjectId` (editing never opens a Project).
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  // Whether Alt+M's "move this tab" mode is on: while it is, bare arrows
+  // reorder the active tab instead of reaching the shell.
+  const [isMovingTab, setIsMovingTab] = useState(false);
   // Tracks which Project's terminal list is the most recently requested one,
   // so a slow response for a Project the user has since switched away from
   // can't overwrite what's currently selected (see refreshTerminals).
@@ -211,6 +215,151 @@ function App() {
   const defaultCwdForNewTerminal =
     terminals.find((t) => t.id === activeTerminalId)?.cwd ?? selectedProject?.default_cwd ?? "";
 
+  // Reorders the active Terminal's tab within its Project's display order,
+  // wrapping around at either end. Only the order moves — nothing about the
+  // Terminal itself changes.
+  function moveActiveTerminal(step: number) {
+    if (!selectedProjectId || !activeTerminalId) return;
+    const order = terminalOrderByProjectRef.current[selectedProjectId] ?? [];
+    const from = order.indexOf(activeTerminalId);
+    if (from === -1 || order.length < 2) return;
+    const to = (((from + step) % order.length) + order.length) % order.length;
+    const next = order.filter((id) => id !== activeTerminalId);
+    next.splice(to, 0, activeTerminalId);
+    terminalOrderByProjectRef.current = {
+      ...terminalOrderByProjectRef.current,
+      [selectedProjectId]: next,
+    };
+    setTerminalOrderByProject(terminalOrderByProjectRef.current);
+  }
+
+  // Creates a Terminal with no configuration at all: the defaults the
+  // Configure page would have shown anyway (name "Terminal N", the current
+  // directory, everything else the daemon's default).
+  async function handleQuickCreateTerminal() {
+    if (!selectedProjectId) return;
+    await handleCreateTerminal(defaultCwdForNewTerminal, {});
+  }
+
+  // Global shortcuts — ShortcutGuide renders this same set below the
+  // Terminal, so the two must stay in step.
+  //
+  // Plain `Alt+<key>`: `Ctrl+Alt+<key>` combinations are widely claimed by
+  // desktop environments (workspace switching and friends), so they never
+  // reached the app.
+  //
+  // Registered in the *capture* phase on `window`: while a Terminal has
+  // focus, xterm.js consumes keydown on its own textarea and forwards the
+  // keystroke to the PTY, so a bubbling listener would never see these —
+  // and the shell would receive a stray escape sequence instead. Matching
+  // on `event.code` rather than `event.key` because Alt+<key> produces a
+  // different `key` depending on the keyboard layout, while the physical
+  // code stays put.
+  //
+  // Inactive while a Configure page is up: there are no tabs to act on
+  // there, and a form field should keep its own key handling.
+  const formIsOpen = terminalForm !== null || editingProjectId !== null;
+  useEffect(() => {
+    if (!selectedProjectId || formIsOpen) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      const plainAlt = event.altKey && !event.ctrlKey && !event.shiftKey && !event.metaKey;
+      const bare = !event.altKey && !event.ctrlKey && !event.shiftKey && !event.metaKey;
+      const ids = orderedTerminals.map((t) => t.id);
+
+      // Move mode swallows the bare arrows too — that's the whole point of
+      // it being a mode: you nudge the tab left/right without holding Alt,
+      // and Escape (or Alt+M again) hands the keys back to the shell.
+      // Enter deliberately isn't an exit key: a stopped Terminal uses it to
+      // start (see TerminalView).
+      if (isMovingTab) {
+        if (bare && (event.code === "ArrowLeft" || event.code === "ArrowRight")) {
+          event.preventDefault();
+          event.stopPropagation();
+          moveActiveTerminal(event.code === "ArrowRight" ? 1 : -1);
+          return;
+        }
+        if ((bare && event.code === "Escape") || (plainAlt && event.code === "KeyM")) {
+          event.preventDefault();
+          event.stopPropagation();
+          setIsMovingTab(false);
+          return;
+        }
+      }
+
+      if (!plainAlt) return;
+
+      if (event.code === "KeyT") {
+        event.preventDefault();
+        event.stopPropagation();
+        void runAction(handleQuickCreateTerminal);
+        return;
+      }
+
+      if (ids.length === 0 || !activeTerminalId) return;
+
+      if (event.code === "KeyE") {
+        event.preventDefault();
+        event.stopPropagation();
+        setTerminalForm({ mode: "edit", terminalId: activeTerminalId });
+        return;
+      }
+
+      if (event.code === "KeyQ") {
+        event.preventDefault();
+        event.stopPropagation();
+        void stopTerminal(activeTerminalId).catch((err) =>
+          setError(err instanceof Error ? err.message : String(err)),
+        );
+        return;
+      }
+
+      if (event.code === "KeyM") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (ids.length > 1) setIsMovingTab(true);
+        return;
+      }
+
+      // Deletes outright, matching the header's Remove button — the
+      // Terminal, its config and its scrollback are gone for good.
+      if (event.code === "Delete") {
+        event.preventDefault();
+        event.stopPropagation();
+        void runAction(() => handleDeleteTerminal(activeTerminalId));
+        return;
+      }
+
+      if (event.code === "ArrowLeft" || event.code === "ArrowRight") {
+        event.preventDefault();
+        event.stopPropagation();
+        const step = event.code === "ArrowRight" ? 1 : -1;
+        const current = ids.indexOf(activeTerminalId);
+        // Wraps around, and an unknown active tab starts from the first one
+        // going right, the last one going left.
+        const next = (((current === -1 ? -step : current) + step) % ids.length + ids.length) % ids.length;
+        openTerminal(ids[next]);
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    selectedProjectId,
+    formIsOpen,
+    activeTerminalId,
+    isMovingTab,
+    defaultCwdForNewTerminal,
+    orderedTerminals.map((t) => t.id).join(),
+  ]);
+
+  // Leaving the Project (or the tab set shrinking to one) ends move mode —
+  // nothing left to move, and a lingering mode would keep eating arrows.
+  useEffect(() => {
+    if (orderedTerminals.length < 2 || formIsOpen) setIsMovingTab(false);
+  }, [orderedTerminals.length, formIsOpen]);
+
   const editingProject = projects.find((p) => p.id === editingProjectId);
 
   const editingTerminal =
@@ -348,6 +497,7 @@ function App() {
                         activeTerminalId={activeTerminalId}
                         onSelectTab={openTerminal}
                         onAddTab={() => setTerminalForm({ mode: "create" })}
+                        isMovingTab={isMovingTab}
                         onError={setError}
                       />
                     </div>

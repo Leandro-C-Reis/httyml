@@ -17,6 +17,7 @@ import {
 } from "../lib/daemon";
 import { IconEdit, IconFolder, IconPlay, IconStop, IconTrash } from "./icons";
 import { TerminalTabBar } from "./TerminalTabBar";
+import { ShortcutGuide } from "./ShortcutGuide";
 
 type TerminalViewProps = {
   terminalId: string;
@@ -28,6 +29,9 @@ type TerminalViewProps = {
   activeTerminalId: string | null;
   onSelectTab: (terminalId: string) => void;
   onAddTab: () => void;
+  /// Alt+M's move mode (owned by App) — passed straight through to the
+  /// shortcut guide below the Terminal.
+  isMovingTab?: boolean;
   // Surfaces a failure that isn't tied to a discrete click the App-level
   // `runAction` wrapper could catch: attach happens inside this
   // component's own mount effect, and a failed Stop/Start shouldn't just
@@ -57,6 +61,7 @@ export function TerminalView({
   activeTerminalId,
   onSelectTab,
   onAddTab,
+  isMovingTab,
   onError,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -167,6 +172,29 @@ export function TerminalView({
     );
   }
 
+  // Enter starts a stopped Terminal — the same thing the overlay's button
+  // does, for the far more common case of just tapping Enter at a dead
+  // shell. Only the *active* tab listens (every opened Terminal stays
+  // mounted), and only while it isn't running, so a live shell never loses
+  // its own Enter. Capture phase for the same reason as App's shortcuts:
+  // xterm.js would otherwise consume the key first.
+  const isActive = terminalId === activeTerminalId;
+  useEffect(() => {
+    if (isRunning || !isActive) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Enter") return;
+      if (event.altKey || event.ctrlKey || event.shiftKey || event.metaKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      startTerminal();
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRunning, isActive, terminalId]);
+
   const statusColor =
     stateVariant(state) === "running"
       ? "bg-secondary text-on-secondary"
@@ -270,6 +298,7 @@ export function TerminalView({
           </div>
         </div>
       </div>
+      <ShortcutGuide isMovingTab={isMovingTab} />
     </div>
   );
 }
