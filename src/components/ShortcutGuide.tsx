@@ -22,7 +22,7 @@ export function ShortcutGuide({ isMovingTab = false }: ShortcutGuideProps) {
   return (
     <ul
       aria-label="Keyboard shortcuts"
-      className="m-0 flex flex-wrap items-center gap-x-4 gap-y-2 border-2 border-ink bg-surface-variant px-3 py-2 list-none"
+      className="m-0 flex flex-wrap items-center gap-x-4 gap-y-2 border-2 border-ink bg-surface-variant px-3 py-2 list-none shadow-[8px_8px_0_var(--color-ink)]"
     >
       {SHORTCUTS.map(({ id, keys, label }) => {
         const active = isMovingTab && id === "move";

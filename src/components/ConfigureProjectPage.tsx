@@ -49,7 +49,7 @@ export function ConfigureProjectPage({ project, onCancel, onSubmit }: ConfigureP
   }
 
   return (
-    <div className="max-w-[640px] flex-1 overflow-y-auto">
+    <div className="max-w-[648px] flex-1 overflow-y-auto pr-2 pb-2">
       <div className="mb-4 border-b-[4px] border-ink pb-3">
         <h1 className="m-0 mb-1 font-display text-[2rem] font-bold tracking-tight uppercase">
           Edit Project

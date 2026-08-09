@@ -88,6 +88,41 @@ describe("App", () => {
     expect(screen.queryByText(/configure terminal/i)).not.toBeInTheDocument();
   });
 
+  it("collapses and expands the Projects sidebar, remembering the choice", async () => {
+    // This jsdom setup has no localStorage of its own, and the sidebar
+    // treats a missing store as "always start expanded" — stub one so the
+    // remembering half of this is actually exercised.
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+    });
+    vi.mocked(daemon.listProjects).mockResolvedValue([project("p1", "Web Dev")]);
+    const { unmount } = render(<App />);
+
+    const nav = await screen.findByRole("navigation", { name: "Projects" });
+    // Expanded: the create form and the project's name are both there.
+    expect(within(nav).getByLabelText("Create project")).toBeInTheDocument();
+    expect(within(nav).getByText("Web Dev")).toBeInTheDocument();
+
+    await userEvent.click(within(nav).getByRole("button", { name: /collapse sidebar/i }));
+
+    expect(within(nav).queryByLabelText("Create project")).not.toBeInTheDocument();
+    // The project is still reachable, by its accessible name only.
+    expect(within(nav).queryByText("Web Dev")).not.toBeInTheDocument();
+    expect(within(nav).getByRole("button", { name: "Web Dev" })).toBeInTheDocument();
+
+    // Remounting keeps it collapsed.
+    unmount();
+    render(<App />);
+    const remounted = await screen.findByRole("navigation", { name: "Projects" });
+    const expand = within(remounted).getByRole("button", { name: /expand sidebar/i });
+
+    await userEvent.click(expand);
+    expect(within(remounted).getByLabelText("Create project")).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+
   it("goes back to the Active Projects dashboard from an open project", async () => {
     vi.mocked(daemon.listProjects).mockResolvedValue([project("p1", "Web Dev")]);
     render(<App />);

@@ -10,7 +10,7 @@ type ProjectDashboardProps = {
 
 export function ProjectDashboard({ projects, onOpen, onEdit }: ProjectDashboardProps) {
   return (
-    <section aria-label="Project dashboard" className="flex-1 overflow-y-auto">
+    <section aria-label="Project dashboard" className="flex-1 overflow-y-auto pr-2 pb-2">
       <p className="mb-1 flex items-center gap-2 font-mono text-xs font-bold tracking-wide text-primary uppercase">
         <span className="h-2 w-2 rounded-full border border-ink bg-secondary" />
         System online
