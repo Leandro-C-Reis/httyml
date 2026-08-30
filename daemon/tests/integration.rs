@@ -1000,6 +1000,98 @@ async fn list_projects_returns_every_created_project() {
 }
 
 #[tokio::test]
+async fn list_projects_preserves_creation_order() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let first = client.create_project("first-project").await;
+    let second = client.create_project("second-project").await;
+    let third = client.create_project("third-project").await;
+
+    client.send(&ClientMessage::ListProjects).await;
+    let projects = match client.recv().await {
+        DaemonMessage::Projects { projects } => projects,
+        other => panic!("expected Projects, got {other:?}"),
+    };
+
+    assert_eq!(
+        projects.iter().map(|p| p.id.clone()).collect::<Vec<_>>(),
+        vec![first, second, third],
+    );
+}
+
+#[tokio::test]
+async fn reorder_projects_changes_list_order_and_survives_a_restart() {
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("projects.json");
+
+    let socket_a = config_dir.path().join("daemon-a.sock");
+    spawn_daemon_with_config(socket_a.clone(), config_path.clone());
+
+    let mut client_a = TestClient::connect(&socket_a).await;
+    let first = client_a.create_project("first-project").await;
+    let second = client_a.create_project("second-project").await;
+    let third = client_a.create_project("third-project").await;
+
+    client_a
+        .send(&ClientMessage::ReorderProjects {
+            project_ids: vec![third.clone(), first.clone(), second.clone()],
+        })
+        .await;
+    let reordered = match client_a.recv().await {
+        DaemonMessage::Projects { projects } => projects,
+        other => panic!("expected Projects, got {other:?}"),
+    };
+    assert_eq!(
+        reordered.iter().map(|p| p.id.clone()).collect::<Vec<_>>(),
+        vec![third.clone(), first.clone(), second.clone()],
+    );
+
+    // "Daemon B" — a separate `run()` call sharing the same config file,
+    // simulating a Daemon restart (see `spawn_daemon_with_config`'s doc
+    // comment) without racing an actual shutdown/respawn on one socket.
+    let socket_b = config_dir.path().join("daemon-b.sock");
+    spawn_daemon_with_config(socket_b.clone(), config_path.clone());
+    let mut client_b = TestClient::connect(&socket_b).await;
+
+    client_b.send(&ClientMessage::ListProjects).await;
+    let projects = match client_b.recv().await {
+        DaemonMessage::Projects { projects } => projects,
+        other => panic!("expected Projects, got {other:?}"),
+    };
+    assert_eq!(
+        projects.iter().map(|p| p.id.clone()).collect::<Vec<_>>(),
+        vec![third, first, second],
+    );
+}
+
+#[tokio::test]
+async fn reorder_projects_ignores_unknown_ids_and_keeps_missing_ones_at_the_end() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let first = client.create_project("first-project").await;
+    let second = client.create_project("second-project").await;
+
+    client
+        .send(&ClientMessage::ReorderProjects {
+            project_ids: vec![second.clone(), "unknown-id".to_string()],
+        })
+        .await;
+    let projects = match client.recv().await {
+        DaemonMessage::Projects { projects } => projects,
+        other => panic!("expected Projects, got {other:?}"),
+    };
+
+    assert_eq!(
+        projects.iter().map(|p| p.id.clone()).collect::<Vec<_>>(),
+        vec![second, first],
+    );
+}
+
+#[tokio::test]
 async fn list_terminals_is_scoped_to_its_project() {
     let (_dir, socket_path) = temp_socket_path();
     spawn_daemon(socket_path.clone());

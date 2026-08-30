@@ -96,6 +96,35 @@ export function IconArrowLeft({ className }: IconProps) {
   );
 }
 
+export function IconGrip({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" width="20" height="20" aria-hidden="true">
+      <circle cx="5" cy="3" r="1.4" fill="currentColor" />
+      <circle cx="11" cy="3" r="1.4" fill="currentColor" />
+      <circle cx="5" cy="8" r="1.4" fill="currentColor" />
+      <circle cx="11" cy="8" r="1.4" fill="currentColor" />
+      <circle cx="5" cy="13" r="1.4" fill="currentColor" />
+      <circle cx="11" cy="13" r="1.4" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function IconArrowUp({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" width="20" height="20" aria-hidden="true">
+      <path d="M8 15V3M4 7l4-4 4 4" stroke="currentColor" strokeWidth="2" fill="none" />
+    </svg>
+  );
+}
+
+export function IconArrowDown({ className }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" width="20" height="20" aria-hidden="true">
+      <path d="M8 1v12M4 9l4 4 4-4" stroke="currentColor" strokeWidth="2" fill="none" />
+    </svg>
+  );
+}
+
 export function IconHome({ className }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 32 32" enable-background="new 0 0 32 32" width="20" height="20" >

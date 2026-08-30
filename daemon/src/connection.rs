@@ -21,6 +21,12 @@ pub struct Registry {
     config_path: PathBuf,
     projects: Mutex<HashMap<String, Project>>,
     terminals: Mutex<HashMap<String, Arc<TerminalHandle>>>,
+    /// Project ids in display order — `projects` is a `HashMap` (no
+    /// iteration order guarantee), so anything user-facing (list, persist)
+    /// must read order from here instead, or a Daemon restart (or any list
+    /// refresh) shuffles Projects. Starts as creation order, but the user
+    /// can rearrange it via `ReorderProjects`.
+    project_order: Mutex<Vec<String>>,
     /// Terminal ids in creation order — `terminals` is a `HashMap` (no
     /// iteration order guarantee), so anything user-facing (list, persist)
     /// must read order from here instead, or a Daemon restart shuffles
@@ -36,6 +42,7 @@ impl Registry {
     fn new(config_path: PathBuf) -> Arc<Self> {
         let (loaded_projects, loaded_terminals) = store::load(&config_path);
 
+        let project_order = loaded_projects.iter().map(|p| p.id.clone()).collect();
         let projects = loaded_projects
             .into_iter()
             .map(|p| (p.id.clone(), p))
@@ -50,6 +57,7 @@ impl Registry {
             config_path,
             projects: Mutex::new(projects),
             terminals: Mutex::new(terminals),
+            project_order: Mutex::new(project_order),
             terminal_order: Mutex::new(terminal_order),
         })
     }
@@ -76,13 +84,16 @@ fn project_info(project: &Project) -> ProjectInfo {
 }
 
 fn persist(registry: &Arc<Registry>) {
+    let projects_lock = registry.projects.lock().unwrap();
     let projects: Vec<Project> = registry
-        .projects
+        .project_order
         .lock()
         .unwrap()
-        .values()
+        .iter()
+        .filter_map(|id| projects_lock.get(id))
         .cloned()
         .collect();
+    drop(projects_lock);
     let terminals_lock = registry.terminals.lock().unwrap();
     let terminals: Vec<(String, TerminalConfig)> = registry
         .terminal_order
@@ -213,6 +224,7 @@ async fn handle_message(
                 .lock()
                 .unwrap()
                 .insert(id.clone(), Project::new(id.clone(), name.clone()));
+            registry.project_order.lock().unwrap().push(id.clone());
             persist(registry);
             send(
                 writer,
@@ -289,13 +301,50 @@ async fn handle_message(
             }
         }
         ClientMessage::ListProjects => {
-            let projects = registry
-                .projects
-                .lock()
-                .unwrap()
-                .values()
-                .map(project_info)
-                .collect();
+            let projects = {
+                let projects_lock = registry.projects.lock().unwrap();
+                registry
+                    .project_order
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|id| projects_lock.get(id))
+                    .map(project_info)
+                    .collect()
+            };
+            send(writer, &DaemonMessage::Projects { projects }).await?;
+        }
+        ClientMessage::ReorderProjects { project_ids } => {
+            {
+                let projects_lock = registry.projects.lock().unwrap();
+                let mut order = registry.project_order.lock().unwrap();
+                // Ignore ids that don't name a real Project, and append any
+                // real Project missing from the list at the end — a partial
+                // or stale list from the app must never drop a Project from
+                // the registry, only reorder what it actually named.
+                let mut new_order: Vec<String> = project_ids
+                    .into_iter()
+                    .filter(|id| projects_lock.contains_key(id))
+                    .collect();
+                for id in order.iter() {
+                    if !new_order.contains(id) {
+                        new_order.push(id.clone());
+                    }
+                }
+                *order = new_order;
+            }
+            persist(registry);
+            let projects = {
+                let projects_lock = registry.projects.lock().unwrap();
+                registry
+                    .project_order
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|id| projects_lock.get(id))
+                    .map(project_info)
+                    .collect()
+            };
             send(writer, &DaemonMessage::Projects { projects }).await?;
         }
         ClientMessage::ListTerminals { project_id } => {
@@ -530,6 +579,11 @@ async fn handle_message(
                 stop_and_forget(registry, handle);
             }
             registry.projects.lock().unwrap().remove(&project_id);
+            registry
+                .project_order
+                .lock()
+                .unwrap()
+                .retain(|id| id != &project_id);
             persist(registry);
             send(writer, &DaemonMessage::ProjectDeleted { project_id }).await?;
         }

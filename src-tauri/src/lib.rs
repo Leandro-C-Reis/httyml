@@ -232,6 +232,15 @@ async fn list_projects() -> Result<Vec<ProjectInfo>, String> {
 }
 
 #[tauri::command]
+async fn reorder_projects(project_ids: Vec<String>) -> Result<Vec<ProjectInfo>, String> {
+    match send_one(ClientMessage::ReorderProjects { project_ids }).await? {
+        DaemonMessage::Projects { projects } => Ok(projects),
+        DaemonMessage::Error { message } => Err(message),
+        _ => Err("unexpected response from daemon".to_string()),
+    }
+}
+
+#[tauri::command]
 async fn list_terminals(project_id: String) -> Result<Vec<TerminalInfo>, String> {
     match send_one(ClientMessage::ListTerminals { project_id }).await? {
         DaemonMessage::Terminals { terminals, .. } => Ok(terminals),
@@ -511,6 +520,7 @@ pub fn run() {
             set_project_scripts,
             read_package_scripts,
             list_projects,
+            reorder_projects,
             list_terminals,
             create_terminal,
             update_terminal,

@@ -34,6 +34,13 @@ pub enum ClientMessage {
         scripts: Vec<ProjectScript>,
     },
     ListProjects,
+    /// Replaces the display order of every Project. Ids not among the
+    /// Daemon's known Projects are ignored; any known Project missing from
+    /// the list keeps its relative place at the end, so a partial list
+    /// never drops a Project from the registry.
+    ReorderProjects {
+        project_ids: Vec<String>,
+    },
     ListTerminals {
         project_id: String,
     },

@@ -6,6 +6,7 @@ import {
   ensureDaemon,
   listProjects,
   listTerminals,
+  reorderProjects,
   setProjectScripts,
   stopTerminal,
   updateProject,
@@ -175,6 +176,19 @@ function App() {
     await updateProject(projectId, options);
     setProjects(await listProjects());
     setEditingProjectId(null);
+  }
+
+  // Applied optimistically (before the daemon round trip resolves) so a
+  // click reflects immediately — same reasoning as `moveActiveTerminal` for
+  // Terminal tabs, just persisted server-side instead of only in memory.
+  async function handleReorderProjects(projectIds: string[]) {
+    setProjects((prev) =>
+      projectIds
+        .map((id) => prev.find((p) => p.id === id))
+        .filter((p): p is ProjectInfo => p !== undefined),
+    );
+    const updated = await reorderProjects(projectIds);
+    setProjects(updated);
   }
 
   async function handleCreateTerminal(cwd: string, options: CreateTerminalOptions) {
@@ -426,6 +440,7 @@ function App() {
             projects={projects}
             onOpen={(id) => void runAction(() => handleSelectProject(id))}
             onEdit={(id) => setEditingProjectId(id)}
+            onReorder={(ids) => void runAction(() => handleReorderProjects(ids))}
           />
         ) : terminalForm?.mode === "create" ? (
           <ConfigureTerminalPage

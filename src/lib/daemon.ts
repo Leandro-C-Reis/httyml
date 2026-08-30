@@ -100,6 +100,13 @@ export async function listProjects(): Promise<ProjectInfo[]> {
   return invoke<ProjectInfo[]>("list_projects");
 }
 
+/// Replaces the sidebar's Project order wholesale. Ids the Daemon doesn't
+/// know are ignored; any known Project missing from `projectIds` keeps its
+/// relative place at the end.
+export async function reorderProjects(projectIds: string[]): Promise<ProjectInfo[]> {
+  return invoke<ProjectInfo[]>("reorder_projects", { projectIds });
+}
+
 export async function listTerminals(projectId: string): Promise<TerminalInfo[]> {
   return invoke<TerminalInfo[]>("list_terminals", { projectId });
 }
