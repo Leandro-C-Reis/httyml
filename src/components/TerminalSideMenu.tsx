@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { readPackageScripts, type ProjectScript, type ScriptArg } from "../lib/daemon";
-import { buildScriptCommand } from "../lib/scriptCommand";
-import { IconCheck, IconEdit, IconPackageJson, IconPlay, IconPlus,  IconTerminal, IconTrash, IconX } from "./icons";
+import { buildScriptCommand, shellQuote } from "../lib/scriptCommand";
+import { IconCheck, IconEdit, IconPackageJson, IconPlay, IconPlus,  IconTerminal, IconTrash, IconVisualStudioCode, IconX } from "./icons";
 import { projectColor } from "./projectStyle";
 
 type PanelKey = "project" | "package";
@@ -484,6 +484,16 @@ export function TerminalSideMenu({
           onClick={() => togglePanel("package")}
         >
           <IconPackageJson className="" />
+        </button>
+        <button
+          type="button"
+          aria-label="Open in VS Code"
+          title="Open in VS Code"
+          className={`${panelButton} text-blue-500`}
+          disabled={!cwd.trim()}
+          onClick={() => onRun(`code ${shellQuote(cwd)}`)}
+        >
+          <IconVisualStudioCode />
         </button>
       </div>
     </div>

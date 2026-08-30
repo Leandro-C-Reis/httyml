@@ -147,6 +147,22 @@ describe("TerminalSideMenu", () => {
     expect(onRun).toHaveBeenCalledWith("npm run dev");
   });
 
+  it("opens VS Code in the Terminal's directory", async () => {
+    const { onRun } = renderMenu();
+
+    await userEvent.click(screen.getByRole("button", { name: "Open in VS Code" }));
+
+    expect(onRun).toHaveBeenCalledWith("code /home/dev/project");
+  });
+
+  it("quotes a directory with spaces when opening VS Code", async () => {
+    const { onRun } = renderMenu({ cwd: "/home/dev/my project" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Open in VS Code" }));
+
+    expect(onRun).toHaveBeenCalledWith("code '/home/dev/my project'");
+  });
+
   it("closes the open panel when its button is clicked again", async () => {
     renderMenu();
     const button = screen.getByRole("button", { name: "Project scripts" });

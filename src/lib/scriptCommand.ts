@@ -4,7 +4,7 @@ import type { ProjectScript, ScriptArg } from "./daemon";
 /// with embedded quotes broken out the POSIX way ('\'') — this text is
 /// typed into a live shell, so a path with a space (or worse) must not turn
 /// into extra arguments.
-function shellQuote(value: string): string {
+export function shellQuote(value: string): string {
   if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) return value;
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
