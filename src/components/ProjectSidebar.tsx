@@ -106,7 +106,7 @@ export function ProjectSidebar({
         type="button"
         aria-label="Active Projects"
         title="Active Projects"
-        className={`${projectItemBase} flex items-center gap-2 text-sm ${
+        className={`${projectItemBase} flex items-center gap-2 text-sm h-12 ${
           collapsed ? "justify-center" : ""
         } ${selectedProjectId === null ? projectItemSelected : projectItemInactive}`}
         onClick={onGoHome}
@@ -157,10 +157,10 @@ export function ProjectSidebar({
               collapsed ? "justify-center px-5.5" : ""
             } ${project.id === selectedProjectId ? projectItemSelected : projectItemInactive}`}
             onClick={() => onSelect(project.id)}
+            style={projectColor(project.color).swatch}
           >
             <span
-              className="flex h-8 w-8 shrink-0 items-center justify-center border-2 border-ink"
-              style={projectColor(project.color).swatch}
+              className="flex h-8 w-8 shrink-0 items-center justify-center"
             >
               <Icon />
             </span>

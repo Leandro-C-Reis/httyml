@@ -15,14 +15,8 @@ export function IconPlus({ className }: IconProps) {
 
 export function IconFolder({ className }: IconProps) {
   return (
-    <svg className={className} viewBox="0 0 16 16" width="20" height="20" aria-hidden="true">
-      <path
-        d="M1 4h4.5L7 5.5H15V13H1Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="miter"
-        fill="none"
-      />
+    <svg className={className} viewBox="0 0 16 16" width="20" height="20" xmlns="http://www.w3.org/2000/svg" >
+      <path d="M14.5 3H7.71l-.85-.85L6.51 2h-5l-.5.5v11l.5.5h13l.5-.5v-10L14.5 3zm-.51 8.49V13h-12V7h4.49l.35-.15.86-.86H14v1.5l-.01 4zm0-6.49h-6.5l-.35.15-.86.86H2v-3h4.29l.85.85.36.15H14l-.01.99z"/>
     </svg>
   );
 }
@@ -104,8 +98,10 @@ export function IconArrowLeft({ className }: IconProps) {
 
 export function IconHome({ className }: IconProps) {
   return (
-    <svg className={className} viewBox="0 0 16 16" width="20" height="20" aria-hidden="true">
-      <path d="M1 7.5 8 2l7 5.5V14H1Z" stroke="currentColor" strokeWidth="1.5" fill="none" />
+    <svg className={className} viewBox="0 0 32 32" enable-background="new 0 0 32 32" width="20" height="20" >
+      <polyline fill="none" stroke="currentColor" strokeWidth="2" strokeMiterlimit="10" points="3,17 16,4 29,17 "/>
+      <polyline fill="none" stroke="currentColor" strokeWidth="2" strokeMiterlimit="10" points="6,14 6,27 13,27 13,17 19,17 19,27 26,27 
+        26,14 "/>
     </svg>
   );
 }
@@ -137,9 +133,36 @@ export function IconStar({ className }: IconProps) {
 
 export function IconTerminal({ className }: IconProps) {
   return (
-    <svg className={className} viewBox="0 0 16 16" width="20" height="20" aria-hidden="true">
-      <path d="M2 3h12v10H2Z" stroke="currentColor" strokeWidth="1.5" fill="none" />
-      <path d="M4 6l2 2-2 2M7.5 10h4" stroke="currentColor" strokeWidth="1.5" fill="none" />
+    <svg
+      className={className}
+      width="20"
+      height="20"
+      viewBox="0 0 0.6 0.6"
+      version="1.1"
+    >
+      <title>terminal_fill</title>
+      <g
+        id="页面-1"
+        stroke="none"
+        stroke-width="1"
+        fill="none"
+        fill-rule="evenodd"
+      >
+        <g id="Development" transform="translate(-432 -48)" fill-rule="nonzero">
+          <g id="terminal_fill" transform="translate(432 48)">
+            <path
+              d="M0.6 0v0.6H0V0zM0.315 0.581l0 0 -0.002 0.001 -0.001 0 0 0 -0.002 -0.001q0 0 -0.001 0l0 0 0 0.011 0 0.001 0 0 0.003 0.002 0 0 0 0 0.003 -0.002 0 0 0 0 0 -0.011q0 0 0 0m0.007 -0.003 0 0 -0.005 0.002 0 0 0 0 0 0.011 0 0 0 0 0.005 0.002q0 0 0.001 0l0 0 -0.001 -0.015q0 0 -0.001 -0.001m-0.018 0a0.001 0.001 0 0 0 -0.001 0l0 0 -0.001 0.015q0 0 0 0.001l0 0 0.005 -0.002 0 0 0 0 0 -0.011 0 0 0 0z"
+              id="MingCute"
+              fill-rule="nonzero"
+            />
+            <path
+              d="M0.5 0.413a0.038 0.038 0 0 1 0.004 0.075L0.5 0.488h-0.2a0.038 0.038 0 0 1 -0.004 -0.075L0.3 0.413zM0.082 0.132A0.038 0.038 0 0 1 0.132 0.13l0.003 0.003 0.141 0.141a0.038 0.038 0 0 1 0.003 0.05l-0.003 0.003 -0.141 0.141A0.038 0.038 0 0 1 0.08 0.418l0.003 -0.003L0.197 0.3 0.082 0.185a0.038 0.038 0 0 1 0 -0.053"
+              id="形状"
+              fill="#09244B"
+            />
+          </g>
+        </g>
+      </g>
     </svg>
   );
 }
@@ -157,14 +180,8 @@ export function IconDatabase({ className }: IconProps) {
 
 export function IconGamepad({ className }: IconProps) {
   return (
-    <svg className={className} viewBox="0 0 16 16" width="20" height="20" aria-hidden="true">
-      <svg fill="#000000" version="1.1" id="Capa_1" width="800px" height="800px" viewBox="0 0 519.465 519.465">
-        <g>
-          <g>
-            <path d="M118.917,519.465h281.63c16.897,0,30.6-13.701,30.6-30.6V30.6c0-16.897-13.702-30.6-30.6-30.6h-281.63    c-16.903,0-30.6,13.703-30.6,30.6v458.265C88.317,505.77,102.014,519.465,118.917,519.465z M239.365,393.645    c0,3.189-2.583,5.771-5.765,5.771h-33.458v33.457c0,3.189-2.583,5.771-5.765,5.771h-19.614c-3.188,0-5.771-2.582-5.771-5.771    v-33.457h-33.458c-3.188,0-5.765-2.582-5.765-5.771v-19.615c0-3.188,2.583-5.77,5.765-5.77h33.458v-33.459    c0-3.189,2.583-5.771,5.771-5.771h19.614c3.188,0,5.765,2.582,5.765,5.771v33.459H233.6c3.188,0,5.765,2.582,5.765,5.77V393.645    L239.365,393.645z M317.077,434.146c-13.696,0-24.799-11.102-24.799-24.799c0-13.695,11.102-24.797,24.799-24.797    c13.696,0,24.798,11.102,24.798,24.797C341.875,423.039,330.768,434.146,317.077,434.146z M395.608,355.615    c0,13.695-11.102,24.799-24.798,24.799s-24.798-11.104-24.798-24.799c0-13.697,11.102-24.799,24.798-24.799    S395.608,341.918,395.608,355.615z M127.357,45.533h259.377v228.479H127.357V45.533z"/>
-          </g>
-        </g>
-        </svg>
+    <svg className={className} width="20" height="20" viewBox="0 0 24 24">
+      <path d="M15 7.5V2H9v5.5l3 3 3-3zM7.5 9H2v6h5.5l3-3-3-3zM9 16.5V22h6v-5.5l-3-3-3 3zM16.5 9l-3 3 3 3H22V9h-5.5z"/>
     </svg>
   );
 }
@@ -217,4 +234,12 @@ export function IconPackageJson({ className }: IconProps) {
       </g>
     </svg>
   );
+}
+
+export function IconBitcoin({ className }: IconProps) {
+  return (
+    <svg className={className} width="20" height="20" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M23.388 15.165c1.733-0.886 2.836-2.462 2.58-5.081-0.335-3.585-3.279-4.786-7.178-5.121v-4.963h-3.033v4.825c-0.788 0-1.595 0.020-2.403 0.039v-4.864h-3.033v4.963c-1.115 0.034-2.414 0.017-6.085 0v3.23c2.394-0.042 3.651-0.196 3.939 1.339v13.589c-0.183 1.218-1.158 1.043-3.328 1.005l-0.61 3.604c5.53 0 6.086 0.020 6.086 0.020v4.25h3.033v-4.191c0.827 0.020 1.634 0.020 2.403 0.020v4.172h3.033v-4.25c5.081-0.276 8.478-1.556 8.931-6.342 0.354-3.84-1.457-5.554-4.333-6.243zM13.413 8.41c1.713 0 7.070-0.532 7.070 3.033 0 3.407-5.357 3.013-7.070 3.013zM13.413 24.145v-6.657c2.048 0 8.32-0.571 8.32 3.328 0 3.762-6.272 3.328-8.32 3.328z"/>
+    </svg>
+  )
 }
