@@ -12,11 +12,8 @@ fn main() {
 
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR is set by cargo");
     let dest = std::path::Path::new(&out_dir).join("build_id.rs");
-    std::fs::write(
-        dest,
-        format!("pub const BUILD_ID: &str = \"{nanos}\";\n"),
-    )
-    .expect("failed to write generated build_id.rs");
+    std::fs::write(dest, format!("pub const BUILD_ID: &str = \"{nanos}\";\n"))
+        .expect("failed to write generated build_id.rs");
 
     // Without this, cargo treats build.rs's own output as cacheable and
     // reuses the same BUILD_ID across incremental rebuilds that didn't

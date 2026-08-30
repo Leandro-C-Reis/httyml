@@ -118,6 +118,28 @@ impl TestClient {
         }
     }
 
+    /// Keep receiving frames until a `Cwd` for `expected_id` arrives — skips
+    /// over interleaved Output/StateChanged frames from a still-attached
+    /// connection, same reasoning as `expect_state`.
+    async fn expect_cwd(&mut self, expected_id: &str) -> String {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                panic!("timed out waiting for Cwd({expected_id})");
+            }
+            let frame = timeout(remaining, read_frame(&mut self.stream))
+                .await
+                .unwrap_or_else(|_| panic!("timed out waiting for Cwd({expected_id})"))
+                .unwrap();
+            let msg: DaemonMessage = serde_json::from_slice(&frame).unwrap();
+            if let DaemonMessage::Cwd { terminal_id, cwd } = msg {
+                assert_eq!(terminal_id, expected_id);
+                return cwd;
+            }
+        }
+    }
+
     /// Asserts no further frame arrives within `duration`.
     async fn expect_silence(&mut self, duration: Duration) {
         let result = timeout(duration, read_frame(&mut self.stream)).await;
@@ -874,7 +896,10 @@ async fn update_project_changes_its_name_and_metadata() {
     assert_eq!(projects.len(), 1);
     assert_eq!(projects[0].id, project_id);
     assert_eq!(projects[0].name, "HTTYML");
-    assert_eq!(projects[0].description.as_deref(), Some("terminal multiplexer"));
+    assert_eq!(
+        projects[0].description.as_deref(),
+        Some("terminal multiplexer")
+    );
     assert_eq!(projects[0].color.as_deref(), Some("pink"));
     assert_eq!(projects[0].icon.as_deref(), Some("bolt"));
     assert_eq!(projects[0].default_cwd, "/tmp");
@@ -1692,7 +1717,9 @@ async fn update_terminal_config_takes_effect_on_next_restart_not_before() {
             data: STANDARD.encode("echo VAR-IS-$HTTYML_TEST_VAR\n"),
         })
         .await;
-    client.expect_output_containing("VAR-IS-updated-value").await;
+    client
+        .expect_output_containing("VAR-IS-updated-value")
+        .await;
 }
 
 #[tokio::test]
@@ -1873,4 +1900,118 @@ async fn shutdown_terminates_the_daemon_process() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     panic!("daemon was still accepting connections after Shutdown");
+}
+
+#[tokio::test]
+async fn get_cwd_tracks_cd_in_the_live_shell() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
+
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id,
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: None,
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+
+    // Before any `cd`, it reports the Terminal's configured directory.
+    client
+        .send(&ClientMessage::GetCwd {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    let cwd = client.expect_cwd(&terminal_id).await;
+    assert_eq!(
+        cwd,
+        std::fs::canonicalize("/tmp").unwrap().display().to_string()
+    );
+
+    client
+        .send(&ClientMessage::Write {
+            terminal_id: terminal_id.clone(),
+            data: STANDARD.encode("cd /\n"),
+        })
+        .await;
+    // `cd` is a shell builtin with no async completion signal of its own —
+    // give the shell a moment to actually read and process the input line.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    client
+        .send(&ClientMessage::GetCwd {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    let cwd = client.expect_cwd(&terminal_id).await;
+    assert_eq!(
+        cwd,
+        std::fs::canonicalize("/").unwrap().display().to_string()
+    );
+}
+
+#[tokio::test]
+async fn get_cwd_on_a_stopped_terminal_falls_back_to_its_configured_directory() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("test-project").await;
+
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id,
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: None,
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client
+        .send(&ClientMessage::Stop {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+
+    client
+        .send(&ClientMessage::GetCwd {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match client.recv().await {
+        DaemonMessage::Cwd { cwd, .. } => {
+            assert_eq!(
+                cwd,
+                std::fs::canonicalize("/tmp").unwrap().display().to_string()
+            );
+        }
+        other => panic!("expected Cwd, got {other:?}"),
+    }
 }

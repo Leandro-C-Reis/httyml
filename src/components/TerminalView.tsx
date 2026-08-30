@@ -6,6 +6,7 @@ import {
   attachTerminal,
   decodeBase64,
   detachTerminal,
+  getTerminalCwd,
   onTerminalOutput,
   resizeTerminal,
   restartTerminal,
@@ -202,6 +203,37 @@ export function TerminalView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRunning, isActive, terminalId]);
 
+  // The folder badge and side menu show where the Terminal *actually* is
+  // right now, not just its configured default — `cd` changes the live
+  // shell's cwd with no push notification of its own, so this polls for it.
+  // Only while active and running: a hidden tab's directory isn't worth the
+  // Daemon round trip, and a stopped one has no live process to read from
+  // anyway (getTerminalCwd already falls back to the configured cwd there).
+  const [liveCwd, setLiveCwd] = useState(cwd);
+  useEffect(() => {
+    setLiveCwd(cwd);
+  }, [cwd]);
+  useEffect(() => {
+    if (!isActive || !isRunning) return;
+    let cancelled = false;
+    const poll = () => {
+      getTerminalCwd(terminalId)
+        .then((value) => {
+          if (!cancelled) setLiveCwd(value);
+        })
+        .catch(() => {
+          // Best-effort background poll — a transient failure just keeps
+          // showing the last known value instead of spamming `onError`.
+        });
+    };
+    poll();
+    const interval = setInterval(poll, 1500);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [terminalId, isActive, isRunning]);
+
   const statusColor =
     stateVariant(state) === "running"
       ? "bg-secondary text-on-secondary"
@@ -235,7 +267,7 @@ export function TerminalView({
             <div className="flex items-center gap-2">
               <IconFolder />
               <span className="inline-flex items-center gap-1.5 border-2 border-ink bg-surface-container-lowest px-2 py-1 font-mono text-xs font-bold tracking-wide break-all">
-                {cwd || "~"}
+                {liveCwd || "~"}
               </span>
             </div>
             <div className="flex gap-2">
@@ -299,7 +331,7 @@ export function TerminalView({
               </div>
             )}
             <TerminalSideMenu
-              cwd={cwd}
+              cwd={liveCwd}
               scripts={scripts}
               onScriptsChange={onScriptsChange}
               onRun={(command) => {

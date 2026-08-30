@@ -378,6 +378,17 @@ async fn write_terminal(
         .await
 }
 
+/// The Terminal's live current directory (reflects `cd`, not just its
+/// configured default) — for a UI element that polls this while visible.
+#[tauri::command]
+async fn get_terminal_cwd(terminal_id: String) -> Result<String, String> {
+    match send_one(ClientMessage::GetCwd { terminal_id }).await? {
+        DaemonMessage::Cwd { cwd, .. } => Ok(cwd),
+        DaemonMessage::Error { message } => Err(message),
+        _ => Err("unexpected response from daemon".to_string()),
+    }
+}
+
 #[tauri::command]
 async fn resize_terminal(
     state: State<'_, AttachedTerminals>,
@@ -425,7 +436,10 @@ async fn restart_terminal(
 /// below and skipping the daemon's replayed Scrollback. Idempotent: a no-op
 /// if it was never attached, or already detached.
 #[tauri::command]
-async fn detach_terminal(state: State<'_, AttachedTerminals>, terminal_id: String) -> Result<(), String> {
+async fn detach_terminal(
+    state: State<'_, AttachedTerminals>,
+    terminal_id: String,
+) -> Result<(), String> {
     state.forget(&terminal_id).await;
     Ok(())
 }
@@ -503,6 +517,7 @@ pub fn run() {
             attach_terminal,
             detach_terminal,
             write_terminal,
+            get_terminal_cwd,
             resize_terminal,
             stop_terminal,
             restart_terminal,

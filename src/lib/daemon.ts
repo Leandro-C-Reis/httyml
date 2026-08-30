@@ -159,6 +159,13 @@ export async function writeTerminal(terminalId: string, data: string): Promise<v
   await invoke("write_terminal", { terminalId, data });
 }
 
+// The Terminal's *live* current directory — reflects `cd`, unlike the
+// static `cwd` from TerminalInfo/CreateTerminal. Meant to be polled (see
+// TerminalView) rather than cached, since there's no push for this.
+export async function getTerminalCwd(terminalId: string): Promise<string> {
+  return invoke<string>("get_terminal_cwd", { terminalId });
+}
+
 export async function resizeTerminal(
   terminalId: string,
   rows: number,

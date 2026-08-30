@@ -208,10 +208,11 @@ async fn handle_message(
     match msg {
         ClientMessage::CreateProject { name } => {
             let id = Uuid::new_v4().to_string();
-            registry.projects.lock().unwrap().insert(
-                id.clone(),
-                Project::new(id.clone(), name.clone()),
-            );
+            registry
+                .projects
+                .lock()
+                .unwrap()
+                .insert(id.clone(), Project::new(id.clone(), name.clone()));
             persist(registry);
             send(
                 writer,
@@ -491,6 +492,20 @@ async fn handle_message(
             if let Some(handle) = lookup(registry, &terminal_id) {
                 log_err(handle.restart());
             }
+        }
+        ClientMessage::GetCwd { terminal_id } => {
+            let Some(handle) = lookup(registry, &terminal_id) else {
+                send(
+                    writer,
+                    &DaemonMessage::Error {
+                        message: format!("unknown terminal {terminal_id}"),
+                    },
+                )
+                .await?;
+                return Ok(());
+            };
+            let cwd = handle.live_cwd();
+            send(writer, &DaemonMessage::Cwd { terminal_id, cwd }).await?;
         }
         ClientMessage::DeleteTerminal { terminal_id } => {
             // Kill the process first (if any) so deleting a running Terminal
