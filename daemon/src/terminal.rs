@@ -263,7 +263,12 @@ impl TerminalHandle {
             }
         }
 
-        for key in ["LD_LIBRARY_PATH", "PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE"] {
+        for key in [
+            "LD_LIBRARY_PATH",
+            "PYTHONHOME",
+            "PYTHONPATH",
+            "PYTHONEXECUTABLE",
+        ] {
             if let Ok(value) = std::env::var(key) {
                 if Self::looks_like_runtime_mount_path(&value) {
                     cmd.env_remove(key);
@@ -427,6 +432,34 @@ impl TerminalHandle {
 
     fn not_running(&self) -> anyhow::Error {
         anyhow::anyhow!("terminal {} is not running", self.id)
+    }
+
+    /// The Terminal's *actual* current directory: reads the live shell
+    /// process's `/proc/<pid>/cwd` symlink, which reflects `cd` the instant
+    /// it runs (a shell's own cwd, not a child command's — `cd` is a shell
+    /// builtin that mutates the shell process's cwd directly). Falls back
+    /// to the configured cwd when there's no live process to read, or the
+    /// read fails (permissions, not on Linux, the process just exited),
+    /// mirroring `start_process`'s own cwd fallback.
+    pub fn live_cwd(&self) -> String {
+        let pid = self
+            .process
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|live| live.child.process_id());
+        if let Some(pid) = pid {
+            if let Ok(target) = std::fs::read_link(format!("/proc/{pid}/cwd")) {
+                return target.display().to_string();
+            }
+        }
+
+        let cfg = self.config.lock().unwrap();
+        if cfg.cwd.is_empty() {
+            std::env::var("HOME").unwrap_or_else(|_| "/".to_string())
+        } else {
+            cfg.cwd.clone()
+        }
     }
 
     pub fn write_input(&self, data: &[u8]) -> anyhow::Result<()> {

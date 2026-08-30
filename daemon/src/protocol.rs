@@ -86,6 +86,12 @@ pub enum ClientMessage {
     Restart {
         terminal_id: String,
     },
+    /// Asks for the Terminal's *live* current directory (see
+    /// `TerminalHandle::live_cwd`), not the configured/default one already
+    /// in `TerminalInfo` — for a UI element that tracks `cd` reactively.
+    GetCwd {
+        terminal_id: String,
+    },
     /// Permanently removes a Terminal's config and state — distinct from
     /// `Stop`, which preserves both. Kills the process first if running.
     DeleteTerminal {
@@ -182,6 +188,10 @@ pub enum DaemonMessage {
     StateChanged {
         terminal_id: String,
         state: TerminalState,
+    },
+    Cwd {
+        terminal_id: String,
+        cwd: String,
     },
     TerminalDeleted {
         terminal_id: String,
