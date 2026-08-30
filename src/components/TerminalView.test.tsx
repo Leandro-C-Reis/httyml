@@ -10,6 +10,7 @@ const mockLoadAddon = vi.fn();
 const mockDispose = vi.fn();
 const mockFit = vi.fn();
 const mockOnData = vi.fn();
+const mockFocus = vi.fn();
 // Mutable so individual tests can simulate "a TUI program left the
 // alternate screen buffer active" by flipping `.type` before dispatching
 // the StateChanged that should (or shouldn't) react to it.
@@ -26,6 +27,7 @@ vi.mock("@xterm/xterm", () => ({
         return { dispose: vi.fn() };
       },
       dispose: mockDispose,
+      focus: mockFocus,
       buffer: mockBuffer,
       rows: 24,
       cols: 80,

@@ -73,10 +73,16 @@ export function TerminalView({
   onError,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // Lets the focus effect below reach this Terminal's xterm instance —
+  // it's created inside the mount effect (keyed only on terminalId, so it
+  // survives tab switches and Stop/Start), while focus needs to react to
+  // isActive/isRunning changing on their own.
+  const termRef = useRef<Terminal | null>(null);
   const [state, setState] = useState<TerminalState>("Running");
 
   useEffect(() => {
     const term = new Terminal();
+    termRef.current = term;
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
 
@@ -169,6 +175,7 @@ export function TerminalView({
       // gets its scrollback replayed — only new output after that point.
       void detachTerminal(terminalId);
       term.dispose();
+      termRef.current = null;
     };
   }, [terminalId]);
 
@@ -202,6 +209,17 @@ export function TerminalView({
     return () => window.removeEventListener("keydown", handleKeyDown, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRunning, isActive, terminalId]);
+
+  // Switching to this tab, or starting it while it's already the active
+  // one, should both hand it the keyboard immediately — not require an
+  // extra click into the black area first. Covers both cases in one
+  // effect: `isActive` flips on a tab switch, `isRunning` flips on Start,
+  // and either one firing while the other already holds re-focuses.
+  useEffect(() => {
+    if (isActive) {
+      termRef.current?.focus();
+    }
+  }, [isActive, isRunning]);
 
   // The folder badge and side menu show where the Terminal *actually* is
   // right now, not just its configured default — `cd` changes the live
