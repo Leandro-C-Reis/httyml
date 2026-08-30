@@ -353,11 +353,17 @@ export function TerminalView({
               scripts={scripts}
               onScriptsChange={onScriptsChange}
               onRun={(command) => {
-                // Typed into the shell exactly as a user would, newline and
-                // all — a script is just a command line, not a side channel.
-                void writeTerminal(terminalId, `${command}\n`).catch((err) =>
-                  onError(err instanceof Error ? err.message : String(err)),
-                );
+                void (async () => {
+                  // A script picked from a stopped Terminal starts it first —
+                  // the daemon spawns the process synchronously as part of
+                  // `restart`, so the PTY is already there to receive input
+                  // by the time this resolves, same as typing into a
+                  // freshly-started Terminal by hand.
+                  if (!isRunning) await restartTerminal(terminalId);
+                  // Typed into the shell exactly as a user would, newline and
+                  // all — a script is just a command line, not a side channel.
+                  await writeTerminal(terminalId, `${command}\n`);
+                })().catch((err) => onError(err instanceof Error ? err.message : String(err)));
               }}
               onError={onError}
             />

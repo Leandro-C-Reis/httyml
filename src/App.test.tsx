@@ -136,6 +136,22 @@ describe("App", () => {
     expect(screen.queryByTestId("active-terminal-view")).not.toBeInTheDocument();
   });
 
+  it("opens Settings from the dashboard, picks a theme, and returns", async () => {
+    localStorage.clear();
+    vi.mocked(daemon.listProjects).mockResolvedValue([project("p1", "Web Dev")]);
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Sunset" }));
+    expect(localStorage.getItem("httyml.theme")).toBe("sunset");
+    expect(document.documentElement.style.getPropertyValue("--color-primary")).toBe("#ea580c");
+
+    await userEvent.click(screen.getByRole("button", { name: /back/i }));
+    expect(await screen.findByRole("button", { name: /open project/i })).toBeInTheDocument();
+  });
+
   it("edits a Project's name and metadata from the dashboard", async () => {
     const p1 = project("p1", "Web Dev");
     vi.mocked(daemon.listProjects).mockResolvedValue([p1]);

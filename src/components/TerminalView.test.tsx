@@ -267,6 +267,40 @@ describe("TerminalView", () => {
     expect(daemon.restartTerminal).toHaveBeenCalledWith("abc123");
   });
 
+  it("starts a stopped Terminal before running a script from the side menu", async () => {
+    const script = { id: "s1", name: "Build", command: "npm run build", args: [] };
+    renderTerminalView({ scripts: [script] });
+    await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());
+    const handleMessage = vi.mocked(daemon.onTerminalOutput).mock.calls[0][1];
+
+    act(() => {
+      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Stopped" });
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Project scripts" }));
+    await userEvent.click(screen.getByRole("button", { name: "Run Build" }));
+
+    await waitFor(() => expect(daemon.restartTerminal).toHaveBeenCalledWith("abc123"));
+    expect(daemon.writeTerminal).toHaveBeenCalledWith("abc123", "npm run build\n");
+    // Restart has to actually finish before the command is typed in — a
+    // freshly restarted process needs the PTY that call sets up.
+    const restartOrder = vi.mocked(daemon.restartTerminal).mock.invocationCallOrder[0];
+    const writeOrder = vi.mocked(daemon.writeTerminal).mock.invocationCallOrder[0];
+    expect(restartOrder).toBeLessThan(writeOrder);
+  });
+
+  it("doesn't restart an already-running Terminal when running a script", async () => {
+    const script = { id: "s1", name: "Build", command: "npm run build", args: [] };
+    renderTerminalView({ scripts: [script] });
+    await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());
+
+    await userEvent.click(screen.getByRole("button", { name: "Project scripts" }));
+    await userEvent.click(screen.getByRole("button", { name: "Run Build" }));
+
+    expect(daemon.writeTerminal).toHaveBeenCalledWith("abc123", "npm run build\n");
+    expect(daemon.restartTerminal).not.toHaveBeenCalled();
+  });
+
   it("shows a distinct exited indicator with the exit code and a start action", async () => {
     renderTerminalView();
     await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());

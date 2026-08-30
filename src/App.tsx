@@ -21,8 +21,10 @@ import { ProjectSidebar } from "./components/ProjectSidebar";
 import { ProjectDashboard } from "./components/ProjectDashboard";
 import { ConfigureTerminalPage, type ConfigureTerminalInitial } from "./components/ConfigureTerminalPage";
 import { ConfigureProjectPage } from "./components/ConfigureProjectPage";
+import { SettingsPage } from "./components/SettingsPage";
 import { TerminalView } from "./components/TerminalView";
 import { IconArrowLeft, IconEdit, IconPlus } from "./components/icons";
+import { applyTheme, readTheme, writeTheme, type ThemeId } from "./lib/theme";
 import "./App.css";
 
 type TerminalFormState = { mode: "create" } | { mode: "edit"; terminalId: string } | null;
@@ -62,6 +64,12 @@ function App() {
   // Whether Alt+M's "move this tab" mode is on: while it is, bare arrows
   // reorder the active tab instead of reaching the shell.
   const [isMovingTab, setIsMovingTab] = useState(false);
+  // Whether the global Settings page is showing in place of the dashboard —
+  // `main.tsx` already applied whatever this started as (see
+  // `applyStoredTheme`), `readTheme()` here just mirrors that into state so
+  // the Settings page's selection highlight matches on first render.
+  const [showSettings, setShowSettings] = useState(false);
+  const [theme, setTheme] = useState<ThemeId>(readTheme);
   // Tracks which Project's terminal list is the most recently requested one,
   // so a slow response for a Project the user has since switched away from
   // can't overwrite what's currently selected (see refreshTerminals).
@@ -125,6 +133,7 @@ function App() {
 
   async function handleSelectProject(projectId: string) {
     setSelectedProjectId(projectId);
+    setShowSettings(false);
     setTerminals([]);
     // terminalOrderByProject is deliberately NOT touched here — each
     // Project keeps its own remembered order (see its declaration above).
@@ -146,6 +155,7 @@ function App() {
     const projectId = await createProject(name);
     setProjects(await listProjects());
     setSelectedProjectId(projectId);
+    setShowSettings(false);
     setTerminals([]);
     setOpenedTerminalIds([]);
     setActiveTerminalId(null);
@@ -163,6 +173,7 @@ function App() {
     setActiveTerminalId(null);
     setTerminalForm(null);
     setEditingProjectId(null);
+    setShowSettings(false);
     latestProjectRequest.current = null;
   }
 
@@ -176,6 +187,14 @@ function App() {
     await updateProject(projectId, options);
     setProjects(await listProjects());
     setEditingProjectId(null);
+  }
+
+  // A display preference, not Project/Terminal data — kept in localStorage
+  // (see `lib/theme`) rather than round-tripped through the daemon.
+  function handleSelectTheme(id: ThemeId) {
+    applyTheme(id);
+    writeTheme(id);
+    setTheme(id);
   }
 
   // Applied optimistically (before the daemon round trip resolves) so a
@@ -427,7 +446,13 @@ function App() {
           onGoHome={handleGoHome}
         />
         <main className="box-border flex min-h-0 flex-1 flex-col bg-[rgb(238,238,238)] bg-[repeating-linear-gradient(45deg,rgb(226,226,226)_0px,rgb(226,226,226)_1px,transparent_0px,transparent_50%)] bg-[length:10px_10px] p-6">
-        {!ready ? null : editingProject ? (
+        {!ready ? null : showSettings ? (
+          <SettingsPage
+            currentTheme={theme}
+            onSelectTheme={handleSelectTheme}
+            onBack={() => setShowSettings(false)}
+          />
+        ) : editingProject ? (
           <ConfigureProjectPage
             project={editingProject}
             onCancel={() => setEditingProjectId(null)}
@@ -441,6 +466,7 @@ function App() {
             onOpen={(id) => void runAction(() => handleSelectProject(id))}
             onEdit={(id) => setEditingProjectId(id)}
             onReorder={(ids) => void runAction(() => handleReorderProjects(ids))}
+            onOpenSettings={() => setShowSettings(true)}
           />
         ) : terminalForm?.mode === "create" ? (
           <ConfigureTerminalPage

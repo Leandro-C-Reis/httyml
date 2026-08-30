@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ProjectInfo } from "../lib/daemon";
-import { IconArrowRight, IconEdit, IconGrip } from "./icons";
+import { IconArrowRight, IconEdit, IconGrip, IconSettings } from "./icons";
 import { projectColor, projectIcon } from "./projectStyle";
 
 type ProjectDashboardProps = {
@@ -10,9 +10,17 @@ type ProjectDashboardProps = {
   /// Persists a full reordering (see `reorderProjects` in `lib/daemon`) —
   /// called with every Project's id in its new display order.
   onReorder: (projectIds: string[]) => void;
+  /// Opens the global Settings page (appearance, ...).
+  onOpenSettings: () => void;
 };
 
-export function ProjectDashboard({ projects, onOpen, onEdit, onReorder }: ProjectDashboardProps) {
+export function ProjectDashboard({
+  projects,
+  onOpen,
+  onEdit,
+  onReorder,
+  onOpenSettings,
+}: ProjectDashboardProps) {
   // Local-only toggle: reordering itself is persisted immediately on drop
   // (so it reflects right away, same as terminal tab drag), this just
   // decides whether cards are draggable at all — a card isn't accidentally
@@ -45,16 +53,28 @@ export function ProjectDashboard({ projects, onOpen, onEdit, onReorder }: Projec
         <h1 className="m-0 font-display text-5xl leading-none font-bold tracking-tight uppercase">
           Active Projects
         </h1>
-        {projects.length > 1 && (
+        <div className="ml-auto flex items-center gap-3">
+          {projects.length > 1 && (
+            <button
+              type="button"
+              className="btn bg-surface-container-lowest text-ink"
+              aria-pressed={reordering}
+              onClick={() => setReordering((prev) => !prev)}
+            >
+              {reordering ? "Done" : "Edit order"}
+            </button>
+          )}
           <button
             type="button"
-            className="btn ml-auto bg-surface-container-lowest text-ink"
-            aria-pressed={reordering}
-            onClick={() => setReordering((prev) => !prev)}
+            aria-label="Settings"
+            title="Settings"
+            className="btn bg-surface-container-lowest text-ink"
+            onClick={onOpenSettings}
           >
-            {reordering ? "Done" : "Edit order"}
+            <IconSettings />
+            Settings
           </button>
-        )}
+        </div>
       </div>
       {projects.length === 0 ? (
         <p className="font-mono text-sm text-on-surface-variant">

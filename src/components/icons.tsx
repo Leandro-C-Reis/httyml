@@ -171,6 +171,25 @@ export function IconArrowLeft({ className }: IconProps) {
   );
 }
 
+export function IconSettings({ className }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 16 16"
+      width="20"
+      height="20"
+      aria-hidden="true"
+    >
+      <line x1="2" y1="4" x2="14" y2="4" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="5" y="2.3" width="3" height="3.4" fill="currentColor" />
+      <line x1="2" y1="8" x2="14" y2="8" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="9" y="6.3" width="3" height="3.4" fill="currentColor" />
+      <line x1="2" y1="12" x2="14" y2="12" stroke="currentColor" strokeWidth="1.5" />
+      <rect x="4" y="10.3" width="3" height="3.4" fill="currentColor" />
+    </svg>
+  );
+}
+
 export function IconGrip({ className }: IconProps) {
   return (
     <svg
