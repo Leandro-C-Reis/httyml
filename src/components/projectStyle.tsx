@@ -1,5 +1,5 @@
 import type { ComponentType, CSSProperties } from "react";
-import { IconBitcoin, IconBolt, IconBox, IconDatabase, IconDice, IconFolder, IconGamepad, IconSmartphone, IconStar, IconTerminal } from "./icons";
+import { IconBitcoin, IconBolt, IconBox, IconDatabase, IconDice, IconFolder, IconGamepad, IconGanesha, IconSmartphone, IconStar, IconTerminal } from "./icons";
 
 // The daemon stores a Project's colour and icon as opaque strings and never
 // interprets them (see `Project` in the daemon) — this module is the only
@@ -104,10 +104,9 @@ export function projectColor(color: string | null): ProjectColor {
   return fromHex(preset.key, preset.label, preset.hex);
 }
 
-export type ProjectIconKey = "terminal" | "folder" | "box" | "bolt" | "star" | "database" | "games" | "dice" | "smartphone" | "bitcoin";
 
 export const PROJECT_ICONS: {
-  key: ProjectIconKey;
+  key: string;
   label: string;
   Icon: ComponentType<{ className?: string }>;
 }[] = [
@@ -121,6 +120,7 @@ export const PROJECT_ICONS: {
   { key: "dice", label: "Dice", Icon: IconDice },
   { key: "smartphone", label: "Smartphone", Icon: IconSmartphone },
   { key: "bitcoin", label: "Bitcoin", Icon: IconBitcoin },
+  { key: "ganesha", label: "Ganesha", Icon: IconGanesha },
 ];
 
 export function projectIcon(icon: string | null) {
