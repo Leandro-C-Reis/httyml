@@ -4,6 +4,8 @@ import {
   createTerminal,
   deleteTerminal,
   ensureDaemon,
+  exportConfig,
+  importConfig,
   listProjects,
   listTerminals,
   reorderProjects,
@@ -24,7 +26,7 @@ import { ConfigureProjectPage } from "./components/ConfigureProjectPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { TerminalView } from "./components/TerminalView";
 import { IconArrowLeft, IconEdit, IconPlus } from "./components/icons";
-import { applyTheme, readTheme, writeTheme, type ThemeId } from "./lib/theme";
+import { applyTheme, readTheme, THEMES, writeTheme, type ThemeId } from "./lib/theme";
 import "./App.css";
 
 type TerminalFormState = { mode: "create" } | { mode: "edit"; terminalId: string } | null;
@@ -70,6 +72,10 @@ function App() {
   // the Settings page's selection highlight matches on first render.
   const [showSettings, setShowSettings] = useState(false);
   const [theme, setTheme] = useState<ThemeId>(readTheme);
+  // One-line confirmation of the most recent export/import — cleared
+  // whenever Settings closes or a new export/import starts, so it never
+  // shows stale results from a previous visit.
+  const [configStatus, setConfigStatus] = useState<string | null>(null);
   // Tracks which Project's terminal list is the most recently requested one,
   // so a slow response for a Project the user has since switched away from
   // can't overwrite what's currently selected (see refreshTerminals).
@@ -134,6 +140,7 @@ function App() {
   async function handleSelectProject(projectId: string) {
     setSelectedProjectId(projectId);
     setShowSettings(false);
+    setConfigStatus(null);
     setTerminals([]);
     // terminalOrderByProject is deliberately NOT touched here — each
     // Project keeps its own remembered order (see its declaration above).
@@ -156,6 +163,7 @@ function App() {
     setProjects(await listProjects());
     setSelectedProjectId(projectId);
     setShowSettings(false);
+    setConfigStatus(null);
     setTerminals([]);
     setOpenedTerminalIds([]);
     setActiveTerminalId(null);
@@ -174,6 +182,7 @@ function App() {
     setTerminalForm(null);
     setEditingProjectId(null);
     setShowSettings(false);
+    setConfigStatus(null);
     latestProjectRequest.current = null;
   }
 
@@ -195,6 +204,34 @@ function App() {
     applyTheme(id);
     writeTheme(id);
     setTheme(id);
+  }
+
+  async function handleExportConfig(path: string) {
+    setConfigStatus(null);
+    await exportConfig(path, { theme });
+    setConfigStatus(`Exported to ${path}.`);
+  }
+
+  async function handleImportConfig(path: string) {
+    setConfigStatus(null);
+    const result = await importConfig(path);
+    setProjects(result.projects);
+    // Whatever Project/Terminal was open belongs to a state that no longer
+    // exists — same reasoning as `handleGoHome`, just forced rather than
+    // asked for.
+    setSelectedProjectId(null);
+    setTerminals([]);
+    setOpenedTerminalIds([]);
+    setActiveTerminalId(null);
+    terminalOrderByProjectRef.current = {};
+    setTerminalOrderByProject({});
+    const importedTheme = result.extra.theme;
+    if (typeof importedTheme === "string" && THEMES.some((t) => t.id === importedTheme)) {
+      handleSelectTheme(importedTheme as ThemeId);
+    }
+    setConfigStatus(
+      `Imported ${result.projects.length} project${result.projects.length === 1 ? "" : "s"} and ${result.terminal_count} terminal${result.terminal_count === 1 ? "" : "s"}.`,
+    );
   }
 
   // Applied optimistically (before the daemon round trip resolves) so a
@@ -450,7 +487,13 @@ function App() {
           <SettingsPage
             currentTheme={theme}
             onSelectTheme={handleSelectTheme}
-            onBack={() => setShowSettings(false)}
+            onBack={() => {
+              setShowSettings(false);
+              setConfigStatus(null);
+            }}
+            onExport={(path) => void runAction(() => handleExportConfig(path))}
+            onImport={(path) => void runAction(() => handleImportConfig(path))}
+            statusMessage={configStatus}
           />
         ) : editingProject ? (
           <ConfigureProjectPage

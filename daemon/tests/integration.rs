@@ -4,7 +4,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use httyml_daemon::framing::{read_frame, write_frame};
 use httyml_daemon::project::{ProjectScript, ScriptArg};
-use httyml_daemon::protocol::{ClientMessage, DaemonMessage};
+use httyml_daemon::protocol::{ClientMessage, DaemonMessage, ProjectInfo, TerminalConfigInfo};
 use httyml_daemon::terminal::TerminalState;
 use tokio::net::UnixStream;
 use tokio::time::timeout;
@@ -1089,6 +1089,167 @@ async fn reorder_projects_ignores_unknown_ids_and_keeps_missing_ones_at_the_end(
         projects.iter().map(|p| p.id.clone()).collect::<Vec<_>>(),
         vec![second, first],
     );
+}
+
+#[tokio::test]
+async fn export_config_returns_every_project_and_terminal() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let project_id = client.create_project("httyml").await;
+    client
+        .send(&ClientMessage::SetProjectScripts {
+            project_id: project_id.clone(),
+            scripts: vec![ProjectScript {
+                id: "s1".to_string(),
+                name: "Build".to_string(),
+                command: "npm run build".to_string(),
+                args: vec![],
+            }],
+        })
+        .await;
+    client.recv().await;
+
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id: project_id.clone(),
+            cwd: "/tmp".to_string(),
+            name: Some("Terminal 1".to_string()),
+            startup_command: None,
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
+        })
+        .await;
+    let terminal_id = match client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+
+    client.send(&ClientMessage::ExportConfig).await;
+    let (projects, terminals) = match client.recv().await {
+        DaemonMessage::Config { projects, terminals } => (projects, terminals),
+        other => panic!("expected Config, got {other:?}"),
+    };
+
+    assert_eq!(projects.len(), 1);
+    assert_eq!(projects[0].id, project_id);
+    assert_eq!(projects[0].scripts.len(), 1);
+    assert_eq!(projects[0].scripts[0].name, "Build");
+
+    assert_eq!(terminals.len(), 1);
+    assert_eq!(terminals[0].id, terminal_id);
+    assert_eq!(terminals[0].project_id, project_id);
+    assert_eq!(terminals[0].cwd, "/tmp");
+    assert_eq!(terminals[0].name.as_deref(), Some("Terminal 1"));
+}
+
+#[tokio::test]
+async fn import_config_replaces_everything_that_was_there_before() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut client = TestClient::connect(&socket_path).await;
+    let old_project = client.create_project("old-project").await;
+    client
+        .send(&ClientMessage::CreateTerminal {
+            project_id: old_project.clone(),
+            cwd: "/tmp".to_string(),
+            name: Some("old-terminal".to_string()),
+            startup_command: None,
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
+        })
+        .await;
+    client.recv().await;
+
+    client
+        .send(&ClientMessage::ImportConfig {
+            projects: vec![ProjectInfo {
+                id: "imported-project".to_string(),
+                name: "Imported".to_string(),
+                description: None,
+                color: None,
+                icon: None,
+                default_cwd: String::new(),
+                scripts: vec![],
+            }],
+            terminals: vec![TerminalConfigInfo {
+                id: "imported-terminal".to_string(),
+                project_id: "imported-project".to_string(),
+                cwd: "/imported".to_string(),
+                name: Some("Imported Terminal".to_string()),
+                startup_command: None,
+                env_vars: std::collections::HashMap::new(),
+                shell: None,
+                scrollback_lines: 5000,
+            }],
+        })
+        .await;
+    let (projects, terminals) = match client.recv().await {
+        DaemonMessage::Config { projects, terminals } => (projects, terminals),
+        other => panic!("expected Config, got {other:?}"),
+    };
+
+    assert_eq!(projects.len(), 1);
+    assert_eq!(projects[0].id, "imported-project");
+    assert_eq!(projects[0].name, "Imported");
+    assert_eq!(terminals.len(), 1);
+    assert_eq!(terminals[0].id, "imported-terminal");
+    assert_eq!(terminals[0].cwd, "/imported");
+
+    // The old Project is really gone, not just missing from the reply.
+    client.send(&ClientMessage::ListProjects).await;
+    let listed = match client.recv().await {
+        DaemonMessage::Projects { projects } => projects,
+        other => panic!("expected Projects, got {other:?}"),
+    };
+    assert_eq!(listed.iter().map(|p| p.id.clone()).collect::<Vec<_>>(), vec![
+        "imported-project".to_string()
+    ]);
+    assert!(!listed.iter().any(|p| p.id == old_project));
+}
+
+#[tokio::test]
+async fn import_config_survives_a_daemon_restart() {
+    let config_dir = tempfile::tempdir().unwrap();
+    let config_path = config_dir.path().join("projects.json");
+
+    let socket_a = config_dir.path().join("daemon-a.sock");
+    spawn_daemon_with_config(socket_a.clone(), config_path.clone());
+
+    let mut client_a = TestClient::connect(&socket_a).await;
+    client_a.create_project("will-be-replaced").await;
+
+    client_a
+        .send(&ClientMessage::ImportConfig {
+            projects: vec![ProjectInfo {
+                id: "kept-project".to_string(),
+                name: "Kept".to_string(),
+                description: None,
+                color: None,
+                icon: None,
+                default_cwd: String::new(),
+                scripts: vec![],
+            }],
+            terminals: vec![],
+        })
+        .await;
+    client_a.recv().await;
+
+    let socket_b = config_dir.path().join("daemon-b.sock");
+    spawn_daemon_with_config(socket_b.clone(), config_path.clone());
+    let mut client_b = TestClient::connect(&socket_b).await;
+
+    client_b.send(&ClientMessage::ListProjects).await;
+    let projects = match client_b.recv().await {
+        DaemonMessage::Projects { projects } => projects,
+        other => panic!("expected Projects, got {other:?}"),
+    };
+    assert_eq!(projects.len(), 1);
+    assert_eq!(projects[0].id, "kept-project");
 }
 
 #[tokio::test]

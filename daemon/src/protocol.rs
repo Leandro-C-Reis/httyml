@@ -108,6 +108,20 @@ pub enum ClientMessage {
     DeleteProject {
         project_id: String,
     },
+    /// Asks for every Project and Terminal config exactly as persisted —
+    /// for the app's "export configuration" feature. Never includes live
+    /// process state, same as everything else the Daemon persists.
+    ExportConfig,
+    /// Wholesale-replaces every Project and Terminal with exactly what's
+    /// given — the app's "import configuration" feature. Every Terminal
+    /// currently running is stopped and its process killed first, same as
+    /// `DeleteProject`'s cascade, so nothing from the state being replaced
+    /// is left running underneath it. Imported Terminals start `Stopped`,
+    /// same as any reload — see `TerminalHandle::reload`.
+    ImportConfig {
+        projects: Vec<ProjectInfo>,
+        terminals: Vec<TerminalConfigInfo>,
+    },
     /// Asks the Daemon to report its build — see `DaemonMessage::Pong` and
     /// `ensure_daemon` in the Tauri app, which uses this to tell a stale
     /// Daemon process apart from the one on disk.
@@ -152,6 +166,24 @@ pub struct TerminalInfo {
     pub shell: Option<String>,
     pub scrollback_lines: usize,
     pub state: TerminalState,
+}
+
+/// A Terminal's config plus id, for export/import — everything
+/// `TerminalInfo` has except `state`, which the Daemon never persists
+/// either (see `store`): an imported or exported Terminal has no live
+/// process to report state for anyway.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TerminalConfigInfo {
+    pub id: String,
+    pub project_id: String,
+    pub cwd: String,
+    pub name: Option<String>,
+    pub startup_command: Option<String>,
+    #[serde(default)]
+    pub env_vars: HashMap<String, String>,
+    #[serde(default)]
+    pub shell: Option<String>,
+    pub scrollback_lines: usize,
 }
 
 /// Messages the Daemon sends back to the app over the same connection.
@@ -205,6 +237,13 @@ pub enum DaemonMessage {
     },
     ProjectDeleted {
         project_id: String,
+    },
+    /// Reply to both `ExportConfig` (the current state, verbatim) and
+    /// `ImportConfig` (the state right after replacing it, confirming what
+    /// actually stuck).
+    Config {
+        projects: Vec<ProjectInfo>,
+        terminals: Vec<TerminalConfigInfo>,
     },
     Error {
         message: String,

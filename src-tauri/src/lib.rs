@@ -6,7 +6,9 @@ use base64::Engine;
 use httyml_daemon::default_socket_path;
 use httyml_daemon::framing::{read_frame, write_frame};
 use httyml_daemon::project::ProjectScript;
-use httyml_daemon::protocol::{ClientMessage, DaemonMessage, ProjectInfo, TerminalInfo};
+use httyml_daemon::protocol::{
+    ClientMessage, DaemonMessage, ProjectInfo, TerminalConfigInfo, TerminalInfo,
+};
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_shell::ShellExt;
 use tokio::net::UnixStream;
@@ -235,6 +237,68 @@ async fn list_projects() -> Result<Vec<ProjectInfo>, String> {
 async fn reorder_projects(project_ids: Vec<String>) -> Result<Vec<ProjectInfo>, String> {
     match send_one(ClientMessage::ReorderProjects { project_ids }).await? {
         DaemonMessage::Projects { projects } => Ok(projects),
+        DaemonMessage::Error { message } => Err(message),
+        _ => Err("unexpected response from daemon".to_string()),
+    }
+}
+
+/// On-disk shape of an exported config file: every Project/Terminal the
+/// Daemon persists, plus whatever app-level settings the Daemon itself
+/// doesn't know about (currently just the chosen color theme) — `extra`
+/// captures those without this file format (or the Daemon's own protocol)
+/// needing to know what they are.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ExportedConfig {
+    projects: Vec<ProjectInfo>,
+    terminals: Vec<TerminalConfigInfo>,
+    #[serde(flatten)]
+    extra: serde_json::Map<String, serde_json::Value>,
+}
+
+#[tauri::command]
+async fn export_config(
+    path: String,
+    extra: serde_json::Map<String, serde_json::Value>,
+) -> Result<(), String> {
+    let (projects, terminals) = match send_one(ClientMessage::ExportConfig).await? {
+        DaemonMessage::Config { projects, terminals } => (projects, terminals),
+        DaemonMessage::Error { message } => return Err(message),
+        _ => return Err("unexpected response from daemon".to_string()),
+    };
+    let json = serde_json::to_string_pretty(&ExportedConfig {
+        projects,
+        terminals,
+        extra,
+    })
+    .map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| e.to_string())
+}
+
+#[derive(serde::Serialize)]
+struct ImportConfigResult {
+    projects: Vec<ProjectInfo>,
+    terminal_count: usize,
+    extra: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Reads `path` and wholesale-replaces every Project/Terminal with what it
+/// contains — see `ClientMessage::ImportConfig` for what that cascade does
+/// to whatever was there before.
+#[tauri::command]
+async fn import_config(path: String) -> Result<ImportConfigResult, String> {
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    let file: ExportedConfig = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    match send_one(ClientMessage::ImportConfig {
+        projects: file.projects,
+        terminals: file.terminals,
+    })
+    .await?
+    {
+        DaemonMessage::Config { projects, terminals } => Ok(ImportConfigResult {
+            terminal_count: terminals.len(),
+            projects,
+            extra: file.extra,
+        }),
         DaemonMessage::Error { message } => Err(message),
         _ => Err("unexpected response from daemon".to_string()),
     }
@@ -510,6 +574,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(AttachedTerminals {
             entries: Mutex::new(HashMap::new()),
         })
@@ -521,6 +586,8 @@ pub fn run() {
             read_package_scripts,
             list_projects,
             reorder_projects,
+            export_config,
+            import_config,
             list_terminals,
             create_terminal,
             update_terminal,

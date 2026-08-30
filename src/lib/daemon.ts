@@ -107,6 +107,43 @@ export async function reorderProjects(projectIds: string[]): Promise<ProjectInfo
   return invoke<ProjectInfo[]>("reorder_projects", { projectIds });
 }
 
+/// A Terminal's config plus id, for export/import — everything `TerminalInfo`
+/// has except `state`, which the daemon never persists either.
+export type TerminalConfigInfo = {
+  id: string;
+  project_id: string;
+  cwd: string;
+  name: string | null;
+  startup_command: string | null;
+  env_vars: Record<string, string>;
+  shell: string | null;
+  scrollback_lines: number;
+};
+
+/// Writes every Project and Terminal, plus `extra` (app-level settings the
+/// daemon itself doesn't know about, e.g. the color theme), to `path` as
+/// JSON.
+export async function exportConfig(
+  path: string,
+  extra: Record<string, unknown> = {},
+): Promise<void> {
+  await invoke("export_config", { path, extra });
+}
+
+export type ImportConfigResult = {
+  projects: ProjectInfo[];
+  terminal_count: number;
+  extra: Record<string, unknown>;
+};
+
+/// Reads `path` and wholesale-replaces every Project and Terminal with what
+/// it contains — every Terminal currently running is stopped first, same as
+/// deleting a Project cascades to its Terminals. Returns whatever `extra`
+/// settings the file carried (see `exportConfig`) for the caller to apply.
+export async function importConfig(path: string): Promise<ImportConfigResult> {
+  return invoke<ImportConfigResult>("import_config", { path });
+}
+
 export async function listTerminals(projectId: string): Promise<TerminalInfo[]> {
   return invoke<TerminalInfo[]>("list_terminals", { projectId });
 }

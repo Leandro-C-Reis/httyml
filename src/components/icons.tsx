@@ -190,6 +190,46 @@ export function IconSettings({ className }: IconProps) {
   );
 }
 
+export function IconDownload({ className }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 16 16"
+      width="20"
+      height="20"
+      aria-hidden="true"
+    >
+      <path
+        d="M8 1v8.5M4.5 6.5 8 10l3.5-3.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        fill="none"
+      />
+      <path d="M2.5 12.5h11v2h-11Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function IconUpload({ className }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 16 16"
+      width="20"
+      height="20"
+      aria-hidden="true"
+    >
+      <path
+        d="M8 10.5V2M4.5 5.5 8 2l3.5 3.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        fill="none"
+      />
+      <path d="M2.5 12.5h11v2h-11Z" fill="currentColor" />
+    </svg>
+  );
+}
+
 export function IconGrip({ className }: IconProps) {
   return (
     <svg

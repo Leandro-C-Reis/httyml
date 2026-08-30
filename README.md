@@ -36,7 +36,7 @@ Daemon lives in [daemon/](daemon/) (Rust), built via `scripts/build-daemon-sidec
 - [ ] 3. Terminal resize / font size / wheel zoom
 - [ ] 4. Daemon auto-restart / health check with app-side reconnect banner
 - [x] 5. Global keyboard shortcuts for Terminal switching
-- [ ] 6. Export/import Project + Terminal configs as JSON
+- [x] 6. Export/import Project + Terminal configs as JSON
 - [ ] 7. Themeable terminal color schemes
 - [ ] 8. Automated build release for Linux (Tauri)
 - [ ] 9. Project templates (predefined Terminal set with cwd/startup command)

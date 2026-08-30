@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::framing::{read_frame, write_frame};
 use crate::project::Project;
-use crate::protocol::{ClientMessage, DaemonMessage, ProjectInfo, TerminalInfo};
+use crate::protocol::{ClientMessage, DaemonMessage, ProjectInfo, TerminalConfigInfo, TerminalInfo};
 use crate::store;
 use crate::terminal::{TerminalConfig, TerminalHandle, DEFAULT_SCROLLBACK_LINES};
 
@@ -111,6 +111,47 @@ fn persist(registry: &Arc<Registry>) {
             registry.config_path
         );
     }
+}
+
+/// Every Project and Terminal exactly as they currently stand, in display
+/// order — the shared body of `ExportConfig`'s reply and `ImportConfig`'s
+/// confirmation reply.
+fn current_config(registry: &Arc<Registry>) -> (Vec<ProjectInfo>, Vec<TerminalConfigInfo>) {
+    let projects = {
+        let projects_lock = registry.projects.lock().unwrap();
+        registry
+            .project_order
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|id| projects_lock.get(id))
+            .map(project_info)
+            .collect()
+    };
+    let terminals = {
+        let terminals_lock = registry.terminals.lock().unwrap();
+        registry
+            .terminal_order
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|id| terminals_lock.get(id))
+            .map(|t| {
+                let cfg = t.config_snapshot();
+                TerminalConfigInfo {
+                    id: t.id.clone(),
+                    project_id: cfg.project_id,
+                    cwd: cfg.cwd,
+                    name: cfg.name,
+                    startup_command: cfg.startup_command,
+                    env_vars: cfg.env_vars,
+                    shell: cfg.shell,
+                    scrollback_lines: cfg.scrollback_lines,
+                }
+            })
+            .collect()
+    };
+    (projects, terminals)
 }
 
 type SharedWriter = Arc<AsyncMutex<OwnedWriteHalf>>;
@@ -586,6 +627,70 @@ async fn handle_message(
                 .retain(|id| id != &project_id);
             persist(registry);
             send(writer, &DaemonMessage::ProjectDeleted { project_id }).await?;
+        }
+        ClientMessage::ExportConfig => {
+            let (projects, terminals) = current_config(registry);
+            send(writer, &DaemonMessage::Config { projects, terminals }).await?;
+        }
+        ClientMessage::ImportConfig { projects, terminals } => {
+            // Stop and drop every currently running Terminal first — same
+            // reasoning as `DeleteProject`'s cascade, just over everything
+            // instead of one Project's worth, so nothing from the state
+            // being replaced is left running underneath the import.
+            let existing: Vec<Arc<TerminalHandle>> =
+                registry.terminals.lock().unwrap().values().cloned().collect();
+            for handle in &existing {
+                stop_and_forget(registry, handle);
+            }
+            registry.projects.lock().unwrap().clear();
+            registry.project_order.lock().unwrap().clear();
+
+            {
+                let mut projects_lock = registry.projects.lock().unwrap();
+                let mut order = registry.project_order.lock().unwrap();
+                for info in projects {
+                    order.push(info.id.clone());
+                    projects_lock.insert(
+                        info.id.clone(),
+                        Project {
+                            id: info.id,
+                            name: info.name,
+                            description: info.description,
+                            color: info.color,
+                            icon: info.icon,
+                            default_cwd: info.default_cwd,
+                            scripts: info.scripts,
+                        },
+                    );
+                }
+            }
+            {
+                let mut terminals_lock = registry.terminals.lock().unwrap();
+                let mut order = registry.terminal_order.lock().unwrap();
+                for t in terminals {
+                    order.push(t.id.clone());
+                    // `reload`, not `spawn`: an imported Terminal starts
+                    // `Stopped` same as any Daemon-restart reload — nothing
+                    // to attach a live process to, since the import payload
+                    // only ever carries config (see `TerminalConfigInfo`).
+                    let handle = TerminalHandle::reload(
+                        t.id.clone(),
+                        TerminalConfig {
+                            project_id: t.project_id,
+                            cwd: t.cwd,
+                            name: t.name,
+                            startup_command: t.startup_command,
+                            env_vars: t.env_vars,
+                            shell: t.shell,
+                            scrollback_lines: t.scrollback_lines,
+                        },
+                    );
+                    terminals_lock.insert(t.id, handle);
+                }
+            }
+            persist(registry);
+            let (projects, terminals) = current_config(registry);
+            send(writer, &DaemonMessage::Config { projects, terminals }).await?;
         }
         ClientMessage::Ping => {
             send(

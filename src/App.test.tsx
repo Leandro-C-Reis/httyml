@@ -3,6 +3,12 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import * as daemon from "./lib/daemon";
+import * as dialog from "./lib/dialog";
+
+vi.mock("./lib/dialog", () => ({
+  pickExportPath: vi.fn(),
+  pickImportPath: vi.fn(),
+}));
 
 vi.mock("./lib/daemon", () => ({
   ensureDaemon: vi.fn().mockResolvedValue(undefined),
@@ -14,6 +20,8 @@ vi.mock("./lib/daemon", () => ({
   stopTerminal: vi.fn().mockResolvedValue(undefined),
   setProjectScripts: vi.fn(),
   updateProject: vi.fn(),
+  exportConfig: vi.fn().mockResolvedValue(undefined),
+  importConfig: vi.fn(),
 }));
 
 // Projects carry presentation metadata (colour, icon, ...) that none of
@@ -150,6 +158,50 @@ describe("App", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /back/i }));
     expect(await screen.findByRole("button", { name: /open project/i })).toBeInTheDocument();
+  });
+
+  it("exports the current config, including the active theme, via the native save dialog", async () => {
+    vi.mocked(daemon.listProjects).mockResolvedValue([]);
+    vi.mocked(dialog.pickExportPath).mockResolvedValue("/tmp/httyml-backup.json");
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: "Nightshade" }));
+    await userEvent.click(screen.getByRole("button", { name: /export configuration/i }));
+
+    expect(dialog.pickExportPath).toHaveBeenCalledWith("httyml-backup.json");
+    await waitFor(() =>
+      expect(daemon.exportConfig).toHaveBeenCalledWith("/tmp/httyml-backup.json", {
+        theme: "nightshade",
+      }),
+    );
+    expect(await screen.findByText(/exported to \/tmp\/httyml-backup\.json/i)).toBeInTheDocument();
+  });
+
+  it("imports a config via the native open dialog, replacing the Project list and returning to the dashboard state", async () => {
+    vi.mocked(daemon.listProjects).mockResolvedValue([project("p1", "Old Project")]);
+    vi.mocked(dialog.pickImportPath).mockResolvedValue("/tmp/httyml-backup.json");
+    vi.mocked(daemon.importConfig).mockResolvedValue({
+      projects: [project("p2", "Imported Project")],
+      terminal_count: 3,
+      extra: { theme: "forest" },
+    });
+    render(<App />);
+    await screen.findByRole("button", { name: /open project/i });
+
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await userEvent.click(screen.getByRole("button", { name: /import configuration/i }));
+    expect(dialog.pickImportPath).toHaveBeenCalledTimes(1);
+    await userEvent.click(await screen.findByRole("button", { name: /replace everything/i }));
+
+    await waitFor(() => expect(daemon.importConfig).toHaveBeenCalledWith("/tmp/httyml-backup.json"));
+    expect(await screen.findByText(/imported 1 project and 3 terminals/i)).toBeInTheDocument();
+    // The imported theme applied too.
+    expect(localStorage.getItem("httyml.theme")).toBe("forest");
+
+    await userEvent.click(screen.getByRole("button", { name: /back/i }));
+    expect(screen.getByText("Imported Project")).toBeInTheDocument();
+    expect(screen.queryByText("Old Project")).not.toBeInTheDocument();
   });
 
   it("edits a Project's name and metadata from the dashboard", async () => {
