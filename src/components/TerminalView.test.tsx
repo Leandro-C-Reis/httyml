@@ -70,6 +70,7 @@ function renderTerminalView(overrides: Partial<Parameters<typeof TerminalView>[0
       cwd="/home/dev/project"
       scripts={[]}
       onScriptsChange={vi.fn()}
+      crtFilterEnabled
       onEdit={onEdit}
       onDelete={onDelete}
       tabs={[
@@ -196,6 +197,12 @@ describe("TerminalView", () => {
     onDataCallback("ls -la\n");
 
     expect(daemon.writeTerminal).toHaveBeenCalledWith("abc123", "ls -la\n");
+  });
+
+  it("removes the CRT visual filter when globally disabled", async () => {
+    renderTerminalView({ crtFilterEnabled: false });
+
+    expect(document.querySelector(".scanlines")).not.toBeInTheDocument();
   });
 
   it("shows the name, directory, and a running indicator with a stop action for a running Terminal", async () => {

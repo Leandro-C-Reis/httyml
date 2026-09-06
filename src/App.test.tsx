@@ -173,6 +173,7 @@ describe("App", () => {
     await waitFor(() =>
       expect(daemon.exportConfig).toHaveBeenCalledWith("/tmp/httyml-backup.json", {
         theme: "nightshade",
+        crt_filter_enabled: true,
       }),
     );
     expect(await screen.findByText(/exported to \/tmp\/httyml-backup\.json/i)).toBeInTheDocument();

@@ -19,6 +19,8 @@ function renderPage(overrides: Partial<Parameters<typeof SettingsPage>[0]> = {})
     <SettingsPage
       currentTheme="terminal-core"
       onSelectTheme={onSelectTheme}
+      crtFilterEnabled
+      onCrtFilterChange={vi.fn()}
       onBack={onBack}
       onExport={onExport}
       onImport={onImport}
@@ -49,6 +51,16 @@ describe("SettingsPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Forest" }));
 
     expect(onSelectTheme).toHaveBeenCalledWith("forest");
+  });
+
+  it("toggles the CRT filter from its visual preview", async () => {
+    const onCrtFilterChange = vi.fn();
+    renderPage({ crtFilterEnabled: false, onCrtFilterChange });
+
+    expect(screen.getByText("$ ready_")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("switch", { name: "CRT filter" }));
+
+    expect(onCrtFilterChange).toHaveBeenCalledWith(true);
   });
 
   it("calls onBack when Back is clicked", async () => {

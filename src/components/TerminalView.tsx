@@ -38,6 +38,8 @@ type TerminalViewProps = {
   /// The Project's saved scripts, for the side menu.
   scripts: ProjectScript[];
   onScriptsChange: (scripts: ProjectScript[]) => void;
+  /// Whether to paint the visual CRT filter over terminal output.
+  crtFilterEnabled: boolean;
   // Surfaces a failure that isn't tied to a discrete click the App-level
   // `runAction` wrapper could catch: attach happens inside this
   // component's own mount effect, and a failed Stop/Start shouldn't just
@@ -70,6 +72,7 @@ export function TerminalView({
   isMovingTab,
   scripts,
   onScriptsChange,
+  crtFilterEnabled,
   onError,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -324,7 +327,10 @@ export function TerminalView({
           </div>
           <div className="relative min-h-0 flex-1">
             <div className="absolute inset-0 bg-black p-2" data-testid="terminal-view" ref={containerRef} />
-            <div className={`scanlines pointer-events-none absolute inset-0 ${!isRunning ? "bg-gray-700" : ""}`} aria-hidden="true" />
+            <div
+              className={`pointer-events-none absolute inset-0 ${crtFilterEnabled ? "scanlines" : ""} ${!isRunning ? "bg-gray-700" : ""}`}
+              aria-hidden="true"
+            />
             {!isRunning && (
               <div
                 data-testid="terminal-idle-overlay"

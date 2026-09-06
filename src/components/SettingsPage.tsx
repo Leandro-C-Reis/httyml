@@ -6,6 +6,8 @@ import { IconArrowLeft, IconCheck, IconDownload, IconUpload, IconX } from "./ico
 type SettingsPageProps = {
   currentTheme: ThemeId;
   onSelectTheme: (id: ThemeId) => void;
+  crtFilterEnabled: boolean;
+  onCrtFilterChange: (enabled: boolean) => void;
   onBack: () => void;
   /// Writes every Project, Terminal, script, and the current theme to a
   /// JSON file at this path.
@@ -23,6 +25,8 @@ type SettingsPageProps = {
 export function SettingsPage({
   currentTheme,
   onSelectTheme,
+  crtFilterEnabled,
+  onCrtFilterChange,
   onBack,
   onExport,
   onImport,
@@ -114,6 +118,30 @@ export function SettingsPage({
               })}
             </div>
           </fieldset>
+          <div className="flex flex-col gap-3 border-t-2 border-ink pt-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="m-0 font-mono text-sm font-bold uppercase">CRT filter</h3>
+                <p className="m-0 font-mono text-xs text-on-surface-variant">
+                  Scanlines and color phosphor overlay for terminal output.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={crtFilterEnabled}
+                aria-label="CRT filter"
+                className={`btn px-3 py-1.5 text-xs ${crtFilterEnabled ? "bg-secondary text-on-secondary" : "bg-surface-container-lowest text-ink"}`}
+                onClick={() => onCrtFilterChange(!crtFilterEnabled)}
+              >
+                {crtFilterEnabled ? "On" : "Off"}
+              </button>
+            </div>
+            <div className="relative overflow-hidden border-2 border-ink bg-black p-3 font-mono text-xs text-secondary">
+              <span>$ ready_</span>
+              {crtFilterEnabled && <div className="scanlines pointer-events-none absolute inset-0" aria-hidden="true" />}
+            </div>
+          </div>
         </section>
         <section className="flex flex-col gap-3 border-t-[4px] border-ink pt-5">
           <h2 className="m-0 inline-block w-fit border-b-2 border-ink pb-1.5 font-display text-xl font-bold uppercase">

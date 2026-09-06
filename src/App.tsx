@@ -27,6 +27,7 @@ import { SettingsPage } from "./components/SettingsPage";
 import { TerminalView } from "./components/TerminalView";
 import { IconArrowLeft, IconEdit, IconPlus } from "./components/icons";
 import { applyTheme, readTheme, THEMES, writeTheme, type ThemeId } from "./lib/theme";
+import { readCrtFilter, writeCrtFilter } from "./lib/crtFilter";
 import "./App.css";
 
 type TerminalFormState = { mode: "create" } | { mode: "edit"; terminalId: string } | null;
@@ -72,6 +73,7 @@ function App() {
   // the Settings page's selection highlight matches on first render.
   const [showSettings, setShowSettings] = useState(false);
   const [theme, setTheme] = useState<ThemeId>(readTheme);
+  const [crtFilterEnabled, setCrtFilterEnabled] = useState(readCrtFilter);
   // One-line confirmation of the most recent export/import — cleared
   // whenever Settings closes or a new export/import starts, so it never
   // shows stale results from a previous visit.
@@ -206,9 +208,14 @@ function App() {
     setTheme(id);
   }
 
+  function handleCrtFilterChange(enabled: boolean) {
+    writeCrtFilter(enabled);
+    setCrtFilterEnabled(enabled);
+  }
+
   async function handleExportConfig(path: string) {
     setConfigStatus(null);
-    await exportConfig(path, { theme });
+    await exportConfig(path, { theme, crt_filter_enabled: crtFilterEnabled });
     setConfigStatus(`Exported to ${path}.`);
   }
 
@@ -228,6 +235,9 @@ function App() {
     const importedTheme = result.extra.theme;
     if (typeof importedTheme === "string" && THEMES.some((t) => t.id === importedTheme)) {
       handleSelectTheme(importedTheme as ThemeId);
+    }
+    if (typeof result.extra.crt_filter_enabled === "boolean") {
+      handleCrtFilterChange(result.extra.crt_filter_enabled);
     }
     setConfigStatus(
       `Imported ${result.projects.length} project${result.projects.length === 1 ? "" : "s"} and ${result.terminal_count} terminal${result.terminal_count === 1 ? "" : "s"}.`,
@@ -487,6 +497,8 @@ function App() {
           <SettingsPage
             currentTheme={theme}
             onSelectTheme={handleSelectTheme}
+            crtFilterEnabled={crtFilterEnabled}
+            onCrtFilterChange={handleCrtFilterChange}
             onBack={() => {
               setShowSettings(false);
               setConfigStatus(null);
@@ -594,6 +606,7 @@ function App() {
                         onScriptsChange={(scripts) =>
                           void runAction(() => handleSetProjectScripts(scripts))
                         }
+                        crtFilterEnabled={crtFilterEnabled}
                         onError={setError}
                       />
                     </div>
