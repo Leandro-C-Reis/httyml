@@ -8,6 +8,7 @@ type ProjectSidebarProps = {
   selectedProjectId: string | null;
   onSelect: (projectId: string) => void;
   onCreate: (name: string) => void;
+  activeTerminalCounts: Record<string, number>;
   /// Clears the selection and shows the Active Projects dashboard.
   onGoHome: () => void;
 };
@@ -46,6 +47,7 @@ export function ProjectSidebar({
   selectedProjectId,
   onSelect,
   onCreate,
+  activeTerminalCounts,
   onGoHome,
 }: ProjectSidebarProps) {
   const [name, setName] = useState("");
@@ -73,11 +75,11 @@ export function ProjectSidebar({
     >
       <div className={`w-full border-b-[3px] border-ink pb-3 ${collapsed ? "flex justify-center" : ""}`}>
         {collapsed ? (
-          <img src="logo.svg" width="24" height="24" alt="HTTYML Logo" />
+          <img src="logo.svg" width="64" alt="HTTYML Logo" />
         ) : (
           <>
             <div className="flex items-center gap-2">
-              <img src="logo.svg" width="24" height="24" alt="HTTYML Logo" />
+              <img src="logo.svg" width="48" alt="HTTYML Logo" />
               <span className="block font-display text-xl leading-tight font-bold tracking-tight uppercase">
                 HTTYML
               </span>
@@ -145,6 +147,8 @@ export function ProjectSidebar({
 
       {projects.map((project) => {
         const { Icon } = projectIcon(project.icon);
+        const activeCount = activeTerminalCounts[project.id] ?? 0;
+        const terminalLabel = `${activeCount} active terminal${activeCount === 1 ? "" : "s"}`;
         return (
           <button
             key={project.id}
@@ -152,8 +156,8 @@ export function ProjectSidebar({
             // Collapsed, the swatch is all there is to go on, so the
             // name has to live in the accessible name and the tooltip.
             aria-label={project.name}
-            title={project.name}
-            className={`${projectItemBase} flex items-center gap-2 ${
+            title={activeCount > 0 ? `${project.name} — ${terminalLabel}` : project.name}
+            className={`${projectItemBase} flex items-center gap-2 relative ${
               collapsed ? "justify-center px-5.5" : ""
             } ${project.id === selectedProjectId ? projectItemSelected : projectItemInactive}`}
             onClick={() => onSelect(project.id)}
@@ -165,6 +169,15 @@ export function ProjectSidebar({
               <Icon />
             </span>
             {!collapsed && <span className="truncate text-sm">{project.name}</span>}
+            {activeCount > 0 && (
+              <span
+                data-testid={`active-terminal-count-${project.id}`}
+                aria-label={terminalLabel}
+                className="absolute top-[-0.5rem] right-[-1rem] rounded-full shrink-0 border-2 border-ink bg-secondary px-2 py-1 font-mono text-[0.6875rem] font-bold text-on-secondary"
+              >
+                {activeCount}
+              </span>
+            )}
           </button>
         );
       })}

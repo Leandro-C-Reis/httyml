@@ -20,13 +20,23 @@ import {
   type TerminalInfo,
 } from "./lib/daemon";
 import { ProjectSidebar } from "./components/ProjectSidebar";
+import { WindowTitleBar } from "./components/WindowTitleBar";
 import { ProjectDashboard } from "./components/ProjectDashboard";
 import { ConfigureTerminalPage, type ConfigureTerminalInitial } from "./components/ConfigureTerminalPage";
 import { ConfigureProjectPage } from "./components/ConfigureProjectPage";
 import { SettingsPage } from "./components/SettingsPage";
 import { TerminalView } from "./components/TerminalView";
-import { IconArrowLeft, IconEdit, IconPlus } from "./components/icons";
-import { applyTheme, readTheme, THEMES, writeTheme, type ThemeId } from "./lib/theme";
+import { IconArrowLeft, IconEdit, IconPlus, IconSettings } from "./components/icons";
+import { projectColor, projectIcon } from "./components/projectStyle";
+import {
+  applyAppearance,
+  BACKGROUND_PATTERNS,
+  readAppearance,
+  THEMES,
+  writeAppearance,
+  type AppearancePreferences,
+  type BackgroundPatternId,
+} from "./lib/theme";
 import { readCrtFilter, writeCrtFilter } from "./lib/crtFilter";
 import "./App.css";
 
@@ -72,8 +82,9 @@ function App() {
   // `applyStoredTheme`), `readTheme()` here just mirrors that into state so
   // the Settings page's selection highlight matches on first render.
   const [showSettings, setShowSettings] = useState(false);
-  const [theme, setTheme] = useState<ThemeId>(readTheme);
+  const [appearance, setAppearance] = useState<AppearancePreferences>(readAppearance);
   const [crtFilterEnabled, setCrtFilterEnabled] = useState(readCrtFilter);
+  const [activeTerminalCounts, setActiveTerminalCounts] = useState<Record<string, number>>({});
   // One-line confirmation of the most recent export/import — cleared
   // whenever Settings closes or a new export/import starts, so it never
   // shows stale results from a previous visit.
@@ -86,7 +97,9 @@ function App() {
   useEffect(() => {
     void runAction(async () => {
       await ensureDaemon();
-      setProjects(await listProjects());
+      const loadedProjects = await listProjects();
+      setProjects(loadedProjects);
+      await refreshActiveTerminalCounts(loadedProjects);
       setReady(true);
     });
   }, []);
@@ -104,6 +117,55 @@ function App() {
     }
   }
 
+  async function refreshActiveTerminalCounts(projectList: ProjectInfo[] = projects) {
+    const entries = await Promise.all(
+      projectList.map(async (project) => {
+        const list = await listTerminals(project.id);
+        return {
+          projectId: project.id,
+          ids: list.map((terminal) => terminal.id),
+          count: list.filter((terminal) => terminal.state === "Running").length,
+        };
+      }),
+    );
+    // The first all-Project snapshot also gives the tab order a stable seed;
+    // a later per-Project refresh can then reconcile against it even if the
+    // daemon returns its map in a different order.
+    const nextOrder = { ...terminalOrderByProjectRef.current };
+    for (const entry of entries) {
+      if (!nextOrder[entry.projectId]) nextOrder[entry.projectId] = entry.ids;
+    }
+    terminalOrderByProjectRef.current = nextOrder;
+    setTerminalOrderByProject(nextOrder);
+    setActiveTerminalCounts(Object.fromEntries(entries.map((entry) => [entry.projectId, entry.count])));
+  }
+
+  // Polling keeps counts correct even for terminals that are not currently
+  // open in the selected Project. Stopped and exited terminals are excluded.
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const entries = await Promise.all(
+          projects.map(async (project) => {
+            const list = await listTerminals(project.id);
+            return [project.id, list.filter((terminal) => terminal.state === "Running").length] as const;
+          }),
+        );
+        if (!cancelled) setActiveTerminalCounts(Object.fromEntries(entries));
+      } catch {
+        // The regular refresh/error path reports user actions; a background
+        // count refresh is best effort and should not interrupt the workspace.
+      }
+    };
+    const interval = setInterval(() => void poll(), 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [ready, projects]);
+
   // Returns the fetched list plus the reconciled display order (ids only),
   // or undefined if a newer request for a different Project has since
   // superseded this one (see `latestProjectRequest`) — callers that want to
@@ -117,6 +179,10 @@ function App() {
     const list = await listTerminals(projectId);
     if (latestProjectRequest.current !== projectId) return undefined;
     setTerminals(list);
+    setActiveTerminalCounts((prev) => ({
+      ...prev,
+      [projectId]: list.filter((terminal) => terminal.state === "Running").length,
+    }));
     const prevOrder = terminalOrderByProjectRef.current[projectId] ?? [];
     const stillPresent = prevOrder.filter((id) => list.some((t) => t.id === id));
     const newIds = list.map((t) => t.id).filter((id) => !stillPresent.includes(id));
@@ -200,12 +266,17 @@ function App() {
     setEditingProjectId(null);
   }
 
-  // A display preference, not Project/Terminal data — kept in localStorage
-  // (see `lib/theme`) rather than round-tripped through the daemon.
-  function handleSelectTheme(id: ThemeId) {
-    applyTheme(id);
-    writeTheme(id);
-    setTheme(id);
+  // Appearance is a display preference, not Project/Terminal data — keep it
+  // local, but apply it immediately so every surface follows the same tokens.
+  function updateAppearance(patch: Partial<AppearancePreferences>) {
+    const next = { ...appearance, ...patch };
+    applyAppearance(next);
+    writeAppearance(next);
+    setAppearance(next);
+  }
+
+  function handleSelectTheme(theme: AppearancePreferences["theme"]) {
+    updateAppearance({ theme });
   }
 
   function handleCrtFilterChange(enabled: boolean) {
@@ -215,7 +286,13 @@ function App() {
 
   async function handleExportConfig(path: string) {
     setConfigStatus(null);
-    await exportConfig(path, { theme, crt_filter_enabled: crtFilterEnabled });
+    await exportConfig(path, {
+      theme: appearance.theme,
+      terminal_background: appearance.terminalBackground,
+      app_background: appearance.appBackground,
+      background_pattern: appearance.backgroundPattern,
+      crt_filter_enabled: crtFilterEnabled,
+    });
     setConfigStatus(`Exported to ${path}.`);
   }
 
@@ -223,6 +300,7 @@ function App() {
     setConfigStatus(null);
     const result = await importConfig(path);
     setProjects(result.projects);
+    setActiveTerminalCounts(Object.fromEntries(result.projects.map((project) => [project.id, 0])));
     // Whatever Project/Terminal was open belongs to a state that no longer
     // exists — same reasoning as `handleGoHome`, just forced rather than
     // asked for.
@@ -233,9 +311,31 @@ function App() {
     terminalOrderByProjectRef.current = {};
     setTerminalOrderByProject({});
     const importedTheme = result.extra.theme;
-    if (typeof importedTheme === "string" && THEMES.some((t) => t.id === importedTheme)) {
-      handleSelectTheme(importedTheme as ThemeId);
-    }
+    const importedPattern = result.extra.background_pattern;
+    const importedTerminalBackground = result.extra.terminal_background;
+    const importedAppBackground = result.extra.app_background;
+    const nextAppearance: AppearancePreferences = {
+      ...appearance,
+      theme:
+        typeof importedTheme === "string" && THEMES.some((t) => t.id === importedTheme)
+          ? (importedTheme as AppearancePreferences["theme"])
+          : appearance.theme,
+      terminalBackground:
+        typeof importedTerminalBackground === "string" && /^#[0-9a-f]{6}$/i.test(importedTerminalBackground)
+          ? importedTerminalBackground
+          : appearance.terminalBackground,
+      appBackground:
+        typeof importedAppBackground === "string" && /^#[0-9a-f]{6}$/i.test(importedAppBackground)
+          ? importedAppBackground
+          : appearance.appBackground,
+      backgroundPattern:
+        typeof importedPattern === "string" && BACKGROUND_PATTERNS.some((pattern) => pattern.id === importedPattern)
+          ? (importedPattern as BackgroundPatternId)
+          : appearance.backgroundPattern,
+    };
+    applyAppearance(nextAppearance);
+    writeAppearance(nextAppearance);
+    setAppearance(nextAppearance);
     if (typeof result.extra.crt_filter_enabled === "boolean") {
       handleCrtFilterChange(result.extra.crt_filter_enabled);
     }
@@ -468,6 +568,7 @@ function App() {
 
   return (
     <div className="flex h-screen flex-col">
+      <WindowTitleBar />
       {error && (
         <div
           role="alert"
@@ -490,13 +591,29 @@ function App() {
           selectedProjectId={selectedProjectId}
           onSelect={(id) => void runAction(() => handleSelectProject(id))}
           onCreate={(name) => void runAction(() => handleCreateProject(name))}
+          activeTerminalCounts={activeTerminalCounts}
           onGoHome={handleGoHome}
         />
-        <main className="box-border flex min-h-0 flex-1 flex-col bg-[rgb(238,238,238)] bg-[repeating-linear-gradient(45deg,rgb(226,226,226)_0px,rgb(226,226,226)_1px,transparent_0px,transparent_50%)] bg-[length:10px_10px] p-6">
+        <main
+          className="box-border flex min-h-0 flex-1 flex-col p-6"
+          style={{
+            backgroundColor: appearance.appBackground,
+            backgroundImage:
+              BACKGROUND_PATTERNS.find((pattern) => pattern.id === appearance.backgroundPattern)?.image,
+            backgroundSize:
+              BACKGROUND_PATTERNS.find((pattern) => pattern.id === appearance.backgroundPattern)?.size,
+          }}
+        >
         {!ready ? null : showSettings ? (
           <SettingsPage
-            currentTheme={theme}
+            currentTheme={appearance.theme}
             onSelectTheme={handleSelectTheme}
+            terminalBackground={appearance.terminalBackground}
+            appBackground={appearance.appBackground}
+            backgroundPattern={appearance.backgroundPattern}
+            onTerminalBackgroundChange={(color) => updateAppearance({ terminalBackground: color })}
+            onAppBackgroundChange={(color) => updateAppearance({ appBackground: color })}
+            onBackgroundPatternChange={(pattern) => updateAppearance({ backgroundPattern: pattern })}
             crtFilterEnabled={crtFilterEnabled}
             onCrtFilterChange={handleCrtFilterChange}
             onBack={() => {
@@ -553,12 +670,33 @@ function App() {
                 <IconArrowLeft />
                 Active Projects
               </button>
+              {selectedProject && (() => {
+                const color = projectColor(selectedProject.color);
+                const { Icon } = projectIcon(selectedProject.icon);
+                return (
+                  <span
+                    aria-label={`${selectedProject.name} project color`}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center border-[3px] border-ink shadow-[3px_3px_0_var(--color-ink)]"
+                    style={color.swatch}
+                  >
+                    <Icon />
+                  </span>
+                );
+              })()}
               <h2 className="m-0 font-display text-[2rem] leading-tight font-bold tracking-tight uppercase">
                 {selectedProject?.name}
               </h2>
               <button
                 type="button"
                 className="btn ml-auto bg-surface-container-lowest text-ink"
+                onClick={() => setShowSettings(true)}
+              >
+                <IconSettings />
+                Settings
+              </button>
+              <button
+                type="button"
+                className="btn bg-surface-container-lowest text-ink"
                 onClick={() => setEditingProjectId(selectedProjectId)}
               >
                 <IconEdit />
@@ -607,6 +745,7 @@ function App() {
                           void runAction(() => handleSetProjectScripts(scripts))
                         }
                         crtFilterEnabled={crtFilterEnabled}
+                        terminalBackgroundColor={appearance.terminalBackground}
                         onError={setError}
                       />
                     </div>

@@ -1,15 +1,21 @@
 import { useState } from "react";
 import { pickExportPath, pickImportPath } from "../lib/dialog";
-import { THEMES, type ThemeId } from "../lib/theme";
+import { BACKGROUND_PATTERNS, THEMES, type BackgroundPatternId, type ThemeId } from "../lib/theme";
 import { IconArrowLeft, IconCheck, IconDownload, IconUpload, IconX } from "./icons";
 
 type SettingsPageProps = {
   currentTheme: ThemeId;
   onSelectTheme: (id: ThemeId) => void;
   crtFilterEnabled: boolean;
+  terminalBackground: string;
+  appBackground: string;
+  backgroundPattern: BackgroundPatternId;
   onCrtFilterChange: (enabled: boolean) => void;
+  onTerminalBackgroundChange: (color: string) => void;
+  onAppBackgroundChange: (color: string) => void;
+  onBackgroundPatternChange: (pattern: BackgroundPatternId) => void;
   onBack: () => void;
-  /// Writes every Project, Terminal, script, and the current theme to a
+  /// Writes every Project, Terminal, script, and appearance preference to a
   /// JSON file at this path.
   onExport: (path: string) => void;
   /// Wholesale-replaces every Project and Terminal with what the file at
@@ -26,7 +32,13 @@ export function SettingsPage({
   currentTheme,
   onSelectTheme,
   crtFilterEnabled,
+  terminalBackground,
+  appBackground,
+  backgroundPattern,
   onCrtFilterChange,
+  onTerminalBackgroundChange,
+  onAppBackgroundChange,
+  onBackgroundPatternChange,
   onBack,
   onExport,
   onImport,
@@ -119,6 +131,49 @@ export function SettingsPage({
             </div>
           </fieldset>
           <div className="flex flex-col gap-3 border-t-2 border-ink pt-4">
+            <h3 className="m-0 font-mono text-sm font-bold uppercase">Surface colors</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex items-center justify-between gap-3 border-2 border-ink bg-surface-container-lowest p-3 font-mono text-xs font-bold uppercase">
+                Terminal background
+                <input
+                  type="color"
+                  aria-label="Terminal background color"
+                  value={terminalBackground}
+                  onChange={(event) => onTerminalBackgroundChange(event.target.value)}
+                  className="h-8 w-12 cursor-pointer border-2 border-ink bg-transparent p-0"
+                />
+              </label>
+              <label className="flex items-center justify-between gap-3 border-2 border-ink bg-surface-container-lowest p-3 font-mono text-xs font-bold uppercase">
+                Application background
+                <input
+                  type="color"
+                  aria-label="Application background color"
+                  value={appBackground}
+                  onChange={(event) => onAppBackgroundChange(event.target.value)}
+                  className="h-8 w-12 cursor-pointer border-2 border-ink bg-transparent p-0"
+                />
+              </label>
+            </div>
+          </div>
+          <fieldset className="m-0 flex flex-col gap-2 border-t-2 border-ink pt-4">
+            <legend className="font-mono text-sm font-bold uppercase">Background pattern</legend>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {BACKGROUND_PATTERNS.map((pattern) => (
+                <button
+                  key={pattern.id}
+                  type="button"
+                  aria-pressed={pattern.id === backgroundPattern}
+                  aria-label={pattern.label}
+                  onClick={() => onBackgroundPatternChange(pattern.id)}
+                  className={`flex h-16 items-end border-ink p-2 font-mono text-[0.6875rem] font-bold uppercase ${pattern.id === backgroundPattern ? "border-[4px] shadow-[4px_4px_0_var(--color-ink)]" : "border-[3px] shadow-none"}`}
+                  style={{ backgroundColor: appBackground, backgroundImage: pattern.image, backgroundSize: pattern.size }}
+                >
+                  <span className="border-2 border-ink bg-surface-container-lowest px-1.5 py-1">{pattern.label}</span>
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <div className="flex flex-col gap-3 border-t-2 border-ink pt-4">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="m-0 font-mono text-sm font-bold uppercase">CRT filter</h3>
@@ -148,7 +203,7 @@ export function SettingsPage({
             Backup
           </h2>
           <p className="m-0 font-mono text-sm text-on-surface-variant">
-            Export every Project, Terminal, script, and this theme choice to a JSON file — or
+            Export every Project, Terminal, script, and appearance preference to a JSON file — or
             import one to restore them, replacing whatever is currently saved.
           </p>
           {statusMessage && (

@@ -40,6 +40,7 @@ type TerminalViewProps = {
   onScriptsChange: (scripts: ProjectScript[]) => void;
   /// Whether to paint the visual CRT filter over terminal output.
   crtFilterEnabled: boolean;
+  terminalBackgroundColor: string;
   // Surfaces a failure that isn't tied to a discrete click the App-level
   // `runAction` wrapper could catch: attach happens inside this
   // component's own mount effect, and a failed Stop/Start shouldn't just
@@ -73,6 +74,7 @@ export function TerminalView({
   scripts,
   onScriptsChange,
   crtFilterEnabled,
+  terminalBackgroundColor,
   onError,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -84,7 +86,7 @@ export function TerminalView({
   const [state, setState] = useState<TerminalState>("Running");
 
   useEffect(() => {
-    const term = new Terminal();
+    const term = new Terminal({ theme: { background: terminalBackgroundColor } });
     termRef.current = term;
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -181,6 +183,13 @@ export function TerminalView({
       termRef.current = null;
     };
   }, [terminalId]);
+
+  useEffect(() => {
+    const term = termRef.current;
+    if (term?.options) {
+      term.options.theme = { ...term.options.theme, background: terminalBackgroundColor };
+    }
+  }, [terminalBackgroundColor]);
 
   const isRunning = state === "Running";
 
@@ -326,7 +335,12 @@ export function TerminalView({
             </div>
           </div>
           <div className="relative min-h-0 flex-1">
-            <div className="absolute inset-0 bg-black p-2" data-testid="terminal-view" ref={containerRef} />
+            <div
+              className="absolute inset-0 p-2"
+              style={{ backgroundColor: terminalBackgroundColor }}
+              data-testid="terminal-view"
+              ref={containerRef}
+            />
             <div
               className={`pointer-events-none absolute inset-0 ${crtFilterEnabled ? "scanlines" : ""} ${!isRunning ? "bg-gray-700" : ""}`}
               aria-hidden="true"

@@ -12,8 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "httyml",
+        "title": "HTTYML // TERMINAL CORE",
         "maximized": true,
+        "decorations": false,
         "width": 800,
         "height": 600
       }

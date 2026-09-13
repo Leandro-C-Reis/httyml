@@ -71,6 +71,7 @@ function renderTerminalView(overrides: Partial<Parameters<typeof TerminalView>[0
       scripts={[]}
       onScriptsChange={vi.fn()}
       crtFilterEnabled
+      terminalBackgroundColor="#050505"
       onEdit={onEdit}
       onDelete={onDelete}
       tabs={[

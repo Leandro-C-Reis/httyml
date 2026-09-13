@@ -20,6 +20,7 @@ export function TerminalTabBar({ terminals, activeTerminalId, onSelect, onAdd }:
             type="button"
             role="tab"
             aria-selected={isActive}
+            aria-label={label}
             className={isActive ? "tab tab--active" : "tab"}
             onClick={() => onSelect(terminal.id)}
           >

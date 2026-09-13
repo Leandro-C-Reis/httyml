@@ -20,7 +20,13 @@ function renderPage(overrides: Partial<Parameters<typeof SettingsPage>[0]> = {})
       currentTheme="terminal-core"
       onSelectTheme={onSelectTheme}
       crtFilterEnabled
+      terminalBackground="#050505"
+      appBackground="#eeeeee"
+      backgroundPattern="horizontal-stripes"
       onCrtFilterChange={vi.fn()}
+      onTerminalBackgroundChange={vi.fn()}
+      onAppBackgroundChange={vi.fn()}
+      onBackgroundPatternChange={vi.fn()}
       onBack={onBack}
       onExport={onExport}
       onImport={onImport}

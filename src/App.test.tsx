@@ -173,6 +173,9 @@ describe("App", () => {
     await waitFor(() =>
       expect(daemon.exportConfig).toHaveBeenCalledWith("/tmp/httyml-backup.json", {
         theme: "nightshade",
+        terminal_background: "#050505",
+        app_background: "#eeeeee",
+        background_pattern: "horizontal-stripes",
         crt_filter_enabled: true,
       }),
     );
@@ -201,7 +204,7 @@ describe("App", () => {
     expect(localStorage.getItem("httyml.theme")).toBe("forest");
 
     await userEvent.click(screen.getByRole("button", { name: /back/i }));
-    expect(screen.getByText("Imported Project")).toBeInTheDocument();
+    expect(screen.getAllByText("Imported Project").length).toBeGreaterThan(0);
     expect(screen.queryByText("Old Project")).not.toBeInTheDocument();
   });
 
