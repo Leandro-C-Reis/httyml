@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
@@ -12,6 +12,12 @@ vi.mock("./lib/dialog", () => ({
 
 vi.mock("./lib/daemon", () => ({
   ensureDaemon: vi.fn().mockResolvedValue(undefined),
+  getDaemonStatus: vi.fn().mockResolvedValue({ state: "Running", pid: 1234, build_id: "build-1", log_path: "/tmp/httyml.log" }),
+  readDaemonLogs: vi.fn().mockResolvedValue({ path: "/tmp/httyml.log", content: "", truncated: false }),
+  startDaemon: vi.fn().mockResolvedValue(undefined),
+  stopDaemon: vi.fn().mockResolvedValue(undefined),
+  restartDaemon: vi.fn().mockResolvedValue(undefined),
+  forceKillDaemon: vi.fn().mockResolvedValue(undefined),
   listProjects: vi.fn().mockResolvedValue([]),
   createProject: vi.fn(),
   listTerminals: vi.fn().mockResolvedValue([]),
@@ -69,6 +75,20 @@ vi.mock("./components/TerminalView", () => ({
 }));
 
 describe("App", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    try {
+      localStorage.clear();
+    } catch {
+      // A few jsdom workers have no persistent localStorage; individual
+      // tests that need it install their own stub.
+    }
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("starts the daemon and loads the Project list on mount", async () => {
     render(<App />);
     await waitFor(() => {
@@ -83,6 +103,37 @@ describe("App", () => {
       expect(screen.getByText(/active projects/i)).toBeInTheDocument();
     });
     expect(screen.queryByTestId("active-terminal-view")).not.toBeInTheDocument();
+  });
+
+  it("restores the saved project, open tabs, active tab, and tab order after reopening", async () => {
+    const store = new Map<string, string>();
+    store.set(
+      "httyml.workspace-session.v1",
+      JSON.stringify({
+        projectId: "p1",
+        openTerminalIds: ["t1", "t2", "deleted"],
+        activeTerminalId: "t2",
+        tabOrder: ["t2", "t1", "deleted"],
+      }),
+    );
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+      removeItem: (key: string) => void store.delete(key),
+      clear: () => store.clear(),
+    });
+    vi.mocked(daemon.listProjects).mockResolvedValue([project("p1", "Recovered Project")]);
+    vi.mocked(daemon.listTerminals).mockResolvedValue([
+      { id: "t1", name: "Terminal 1", cwd: "/tmp", startup_command: null, env_vars: {}, shell: null, scrollback_lines: 10000, state: "Running" },
+      { id: "t2", name: "Terminal 2", cwd: "/tmp", startup_command: null, env_vars: {}, shell: null, scrollback_lines: 10000, state: "Running" },
+    ]);
+
+    render(<App />);
+
+    const active = await screen.findByTestId("active-terminal-view");
+    expect(active).toHaveTextContent("t2");
+    expect(within(active).getByRole("list", { name: "tab order" })).toHaveTextContent("Terminal 2Terminal 1");
+    expect(store.get("httyml.workspace-session.v1")).not.toContain("deleted");
   });
 
   it("shows a New Terminal prompt — no inline create form — for an empty project", async () => {

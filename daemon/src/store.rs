@@ -61,7 +61,7 @@ pub fn load(path: &Path) -> (Vec<Project>, Vec<(String, TerminalConfig)>) {
     let state: PersistedState = match serde_json::from_slice(&bytes) {
         Ok(state) => state,
         Err(err) => {
-            eprintln!("httyml-daemon: failed to parse {path:?}, starting empty: {err:#}");
+            crate::logging::error(format!("failed to parse {path:?}, starting empty: {err:#}"));
             return (Vec::new(), Vec::new());
         }
     };

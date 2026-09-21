@@ -332,6 +332,7 @@ impl TerminalHandle {
             child,
         });
         self.set_state(TerminalState::Running);
+        crate::logging::info(format!("terminal {} started", self.id));
 
         let handle = self.clone();
         std::thread::spawn(move || {
@@ -377,6 +378,7 @@ impl TerminalHandle {
             .map(|status| status.exit_code() as i32)
             .unwrap_or(-1);
         self.set_state(TerminalState::Exited { exit_code });
+        crate::logging::info(format!("terminal {} exited with code {exit_code}", self.id));
     }
 
     fn set_state(&self, state: TerminalState) {
@@ -414,6 +416,7 @@ impl TerminalHandle {
             let _ = live.child.kill();
             let _ = live.child.wait();
             self.set_state(TerminalState::Stopped);
+            crate::logging::info(format!("terminal {} stopped", self.id));
         }
         Ok(())
     }

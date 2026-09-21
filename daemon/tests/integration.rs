@@ -279,6 +279,79 @@ async fn attach_replays_buffered_scrollback() {
 }
 
 #[tokio::test]
+async fn a_new_app_client_reconnects_to_a_terminal_after_the_previous_client_closes() {
+    let (_dir, socket_path) = temp_socket_path();
+    spawn_daemon(socket_path.clone());
+
+    let mut first_client = TestClient::connect(&socket_path).await;
+    let project_id = first_client.create_project("reconnect-project").await;
+    first_client
+        .send(&ClientMessage::CreateTerminal {
+            project_id,
+            env_vars: std::collections::HashMap::new(),
+            shell: None,
+            scrollback_lines: None,
+            cwd: "/tmp".to_string(),
+            name: None,
+            startup_command: None,
+        })
+        .await;
+    let terminal_id = match first_client.recv().await {
+        DaemonMessage::Created { terminal_id } => terminal_id,
+        other => panic!("expected Created, got {other:?}"),
+    };
+    first_client
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    match first_client.recv().await {
+        DaemonMessage::Scrollback { .. } => {}
+        other => panic!("expected Scrollback, got {other:?}"),
+    }
+    first_client.expect_state(TerminalState::Running).await;
+    first_client
+        .send(&ClientMessage::Write {
+            terminal_id: terminal_id.clone(),
+            data: STANDARD.encode("echo BEFORE-APP-REOPEN\\n"),
+        })
+        .await;
+    first_client
+        .expect_output_containing("BEFORE-APP-REOPEN")
+        .await;
+
+    // Simulates closing the desktop app. The daemon and its PTY must remain
+    // healthy even though this attached client disappears without Detach.
+    drop(first_client);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let mut reopened_app = TestClient::connect(&socket_path).await;
+    reopened_app
+        .send(&ClientMessage::Attach {
+            terminal_id: terminal_id.clone(),
+        })
+        .await;
+    let scrollback = match reopened_app.recv().await {
+        DaemonMessage::Scrollback { data, .. } => STANDARD.decode(data).unwrap(),
+        other => panic!("expected Scrollback, got {other:?}"),
+    };
+    assert!(
+        String::from_utf8_lossy(&scrollback).contains("BEFORE-APP-REOPEN"),
+        "reopened app did not receive the existing terminal scrollback"
+    );
+    reopened_app.expect_state(TerminalState::Running).await;
+    reopened_app
+        .send(&ClientMessage::Write {
+            terminal_id,
+            data: STANDARD.encode("echo AFTER-APP-REOPEN\\n"),
+        })
+        .await;
+    reopened_app
+        .expect_output_containing("AFTER-APP-REOPEN")
+        .await;
+}
+
+#[tokio::test]
 async fn resize_changes_the_pty_size_seen_by_the_shell() {
     let (_dir, socket_path) = temp_socket_path();
     spawn_daemon(socket_path.clone());
@@ -1129,7 +1202,10 @@ async fn export_config_returns_every_project_and_terminal() {
 
     client.send(&ClientMessage::ExportConfig).await;
     let (projects, terminals) = match client.recv().await {
-        DaemonMessage::Config { projects, terminals } => (projects, terminals),
+        DaemonMessage::Config {
+            projects,
+            terminals,
+        } => (projects, terminals),
         other => panic!("expected Config, got {other:?}"),
     };
 
@@ -1189,7 +1265,10 @@ async fn import_config_replaces_everything_that_was_there_before() {
         })
         .await;
     let (projects, terminals) = match client.recv().await {
-        DaemonMessage::Config { projects, terminals } => (projects, terminals),
+        DaemonMessage::Config {
+            projects,
+            terminals,
+        } => (projects, terminals),
         other => panic!("expected Config, got {other:?}"),
     };
 
@@ -1206,9 +1285,10 @@ async fn import_config_replaces_everything_that_was_there_before() {
         DaemonMessage::Projects { projects } => projects,
         other => panic!("expected Projects, got {other:?}"),
     };
-    assert_eq!(listed.iter().map(|p| p.id.clone()).collect::<Vec<_>>(), vec![
-        "imported-project".to_string()
-    ]);
+    assert_eq!(
+        listed.iter().map(|p| p.id.clone()).collect::<Vec<_>>(),
+        vec!["imported-project".to_string()]
+    );
     assert!(!listed.iter().any(|p| p.id == old_project));
 }
 
@@ -2127,7 +2207,7 @@ async fn ping_reports_this_process_build_id() {
     client.send(&ClientMessage::Ping).await;
 
     match client.recv().await {
-        DaemonMessage::Pong { build_id } => assert!(
+        DaemonMessage::Pong { build_id, .. } => assert!(
             !build_id.is_empty(),
             "expected a non-empty build id in Pong"
         ),

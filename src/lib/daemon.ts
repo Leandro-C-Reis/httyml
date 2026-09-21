@@ -61,8 +61,45 @@ export type DaemonMessage =
   | { type: "StateChanged"; terminal_id: string; state: TerminalState }
   | { type: "Error"; message: string };
 
+export type DaemonStatus = {
+  state: "Running" | "Stopped" | "Unresponsive";
+  pid: number | null;
+  build_id: string | null;
+  log_path: string;
+};
+
+export type DaemonLogs = {
+  path: string;
+  content: string;
+  truncated: boolean;
+};
+
 export async function ensureDaemon(): Promise<void> {
   await invoke("ensure_daemon");
+}
+
+export function getDaemonStatus(): Promise<DaemonStatus> {
+  return invoke<DaemonStatus>("daemon_status");
+}
+
+export function readDaemonLogs(): Promise<DaemonLogs> {
+  return invoke<DaemonLogs>("read_daemon_logs");
+}
+
+export async function startDaemon(): Promise<void> {
+  await invoke("start_daemon");
+}
+
+export async function stopDaemon(): Promise<void> {
+  await invoke("stop_daemon");
+}
+
+export async function restartDaemon(): Promise<void> {
+  await invoke("restart_daemon");
+}
+
+export async function forceKillDaemon(): Promise<void> {
+  await invoke("force_kill_daemon");
 }
 
 export async function createProject(name: string): Promise<string> {

@@ -5,15 +5,23 @@ import {
   deleteTerminal,
   ensureDaemon,
   exportConfig,
+  forceKillDaemon,
+  getDaemonStatus,
   importConfig,
   listProjects,
   listTerminals,
+  readDaemonLogs,
   reorderProjects,
+  restartDaemon,
   setProjectScripts,
+  startDaemon,
+  stopDaemon,
   stopTerminal,
   updateProject,
   updateTerminal,
   type CreateTerminalOptions,
+  type DaemonLogs,
+  type DaemonStatus,
   type ProjectScript,
   type UpdateProjectOptions,
   type ProjectInfo,
@@ -38,6 +46,7 @@ import {
   type BackgroundPatternId,
 } from "./lib/theme";
 import { readCrtFilter, writeCrtFilter } from "./lib/crtFilter";
+import { readWorkspaceSession, writeWorkspaceSession } from "./lib/workspaceSession";
 import "./App.css";
 
 type TerminalFormState = { mode: "create" } | { mode: "edit"; terminalId: string } | null;
@@ -89,20 +98,100 @@ function App() {
   // whenever Settings closes or a new export/import starts, so it never
   // shows stale results from a previous visit.
   const [configStatus, setConfigStatus] = useState<string | null>(null);
+  const [daemonStatus, setDaemonStatus] = useState<DaemonStatus>({
+    state: "Stopped",
+    pid: null,
+    build_id: null,
+    log_path: "",
+  });
+  const [daemonLogs, setDaemonLogs] = useState<DaemonLogs>({
+    path: "",
+    content: "",
+    truncated: false,
+  });
+  // Re-keying a restored tab after daemon Start/Restart forces TerminalView
+  // to create a new listener and attachment instead of holding a socket from
+  // the daemon instance that just ended.
+  const [daemonConnectionEpoch, setDaemonConnectionEpoch] = useState(0);
   // Tracks which Project's terminal list is the most recently requested one,
   // so a slow response for a Project the user has since switched away from
   // can't overwrite what's currently selected (see refreshTerminals).
   const latestProjectRequest = useRef<string | null>(null);
 
   useEffect(() => {
-    void runAction(async () => {
-      await ensureDaemon();
-      const loadedProjects = await listProjects();
-      setProjects(loadedProjects);
-      await refreshActiveTerminalCounts(loadedProjects);
-      setReady(true);
-    });
+    let cancelled = false;
+
+    async function bootstrap() {
+      try {
+        // Startup remains automatic even after a user stopped the daemon in
+        // a previous window. A healthy existing daemon is left untouched.
+        await ensureDaemon();
+        const loadedProjects = await listProjects();
+        if (cancelled) return;
+        setProjects(loadedProjects);
+        await refreshActiveTerminalCounts(loadedProjects);
+
+        const saved = readWorkspaceSession();
+        if (saved && loadedProjects.some((project) => project.id === saved.projectId)) {
+          terminalOrderByProjectRef.current = {
+            ...terminalOrderByProjectRef.current,
+            [saved.projectId]: saved.tabOrder,
+          };
+          setTerminalOrderByProject(terminalOrderByProjectRef.current);
+          setSelectedProjectId(saved.projectId);
+          const result = await refreshTerminals(saved.projectId);
+          if (!cancelled && result) {
+            const existing = new Set(result.list.map((terminal) => terminal.id));
+            const opened = saved.openTerminalIds.filter((id) => existing.has(id));
+            const active =
+              saved.activeTerminalId && opened.includes(saved.activeTerminalId)
+                ? saved.activeTerminalId
+                : opened[0] ?? null;
+            setOpenedTerminalIds(opened);
+            setActiveTerminalId(active);
+          }
+        }
+        if (!cancelled) setDaemonStatus(await getDaemonStatus());
+      } catch (err) {
+        if (!cancelled) {
+          console.error(err);
+          setError(err instanceof Error ? err.message : String(err));
+          // A hung daemon must not trap the user behind a blank boot screen:
+          // Settings exposes Force kill even when Projects cannot load.
+          setShowSettings(true);
+          try {
+            setDaemonStatus(await getDaemonStatus());
+          } catch {
+            // The visible startup error remains the useful fallback.
+          }
+        }
+      } finally {
+        if (!cancelled) setReady(true);
+      }
+    }
+
+    void bootstrap();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  // Session recovery is deliberately app-local. It records only navigation
+  // state, never daemon configuration or terminal output, and stale ids are
+  // reconciled against the daemon during the next bootstrap.
+  useEffect(() => {
+    if (!ready) return;
+    if (!selectedProjectId) {
+      writeWorkspaceSession(null);
+      return;
+    }
+    writeWorkspaceSession({
+      projectId: selectedProjectId,
+      openTerminalIds: openedTerminalIds,
+      activeTerminalId,
+      tabOrder: terminalOrderByProject[selectedProjectId] ?? [],
+    });
+  }, [ready, selectedProjectId, openedTerminalIds, activeTerminalId, terminalOrderByProject]);
 
   // Every daemon/Tauri call goes through here so a failure (daemon not
   // reachable, sidecar not found, ...) surfaces as a visible message instead
@@ -116,6 +205,70 @@ function App() {
       setError(err instanceof Error ? err.message : String(err));
     }
   }
+
+  async function refreshDaemonDetails(includeLogs = false) {
+    const status = await getDaemonStatus();
+    setDaemonStatus(status);
+    if (includeLogs) setDaemonLogs(await readDaemonLogs());
+  }
+
+  async function reloadWorkspaceAfterDaemonStart() {
+    const loadedProjects = await listProjects();
+    setProjects(loadedProjects);
+    await refreshActiveTerminalCounts(loadedProjects);
+
+    if (!selectedProjectId || !loadedProjects.some((project) => project.id === selectedProjectId)) {
+      if (selectedProjectId) {
+        setSelectedProjectId(null);
+        setTerminals([]);
+        setOpenedTerminalIds([]);
+        setActiveTerminalId(null);
+      }
+      await refreshDaemonDetails(true);
+      return;
+    }
+
+    const result = await refreshTerminals(selectedProjectId);
+    if (result) {
+      const existing = new Set(result.list.map((terminal) => terminal.id));
+      const open = openedTerminalIds.filter((id) => existing.has(id));
+      setOpenedTerminalIds(open);
+      setActiveTerminalId((active) => (active && open.includes(active) ? active : open[0] ?? null));
+      // New keys make every surviving visible tab build a new Tauri listener
+      // and attach connection after the previous daemon instance went away.
+      setDaemonConnectionEpoch((epoch) => epoch + 1);
+    }
+    await refreshDaemonDetails(true);
+  }
+
+  async function handleStartDaemon() {
+    await startDaemon();
+    await reloadWorkspaceAfterDaemonStart();
+  }
+
+  async function handleRestartDaemon() {
+    await restartDaemon();
+    await reloadWorkspaceAfterDaemonStart();
+  }
+
+  async function handleStopDaemon() {
+    await stopDaemon();
+    setActiveTerminalCounts(Object.fromEntries(projects.map((project) => [project.id, 0])));
+    await refreshDaemonDetails(true);
+  }
+
+  async function handleForceKillDaemon() {
+    await forceKillDaemon();
+    setActiveTerminalCounts(Object.fromEntries(projects.map((project) => [project.id, 0])));
+    await refreshDaemonDetails(true);
+  }
+
+  useEffect(() => {
+    if (!ready || !showSettings) return;
+    void refreshDaemonDetails(true).catch(() => undefined);
+    const interval = setInterval(() => void refreshDaemonDetails().catch(() => undefined), 2000);
+    return () => clearInterval(interval);
+  }, [ready, showSettings]);
 
   async function refreshActiveTerminalCounts(projectList: ProjectInfo[] = projects) {
     const entries = await Promise.all(
@@ -623,6 +776,13 @@ function App() {
             onExport={(path) => void runAction(() => handleExportConfig(path))}
             onImport={(path) => void runAction(() => handleImportConfig(path))}
             statusMessage={configStatus}
+            daemonStatus={daemonStatus}
+            daemonLogs={daemonLogs}
+            onRefreshDaemon={() => runAction(() => refreshDaemonDetails(true))}
+            onStartDaemon={() => runAction(handleStartDaemon)}
+            onStopDaemon={() => runAction(handleStopDaemon)}
+            onRestartDaemon={() => runAction(handleRestartDaemon)}
+            onForceKillDaemon={() => runAction(handleForceKillDaemon)}
           />
         ) : editingProject ? (
           <ConfigureProjectPage
@@ -640,6 +800,23 @@ function App() {
             onReorder={(ids) => void runAction(() => handleReorderProjects(ids))}
             onOpenSettings={() => setShowSettings(true)}
           />
+        ) : daemonStatus.state !== "Running" ? (
+          <section className="card flex max-w-xl flex-col items-start gap-4 p-5" aria-labelledby="daemon-offline-title">
+            <div className="-mx-5 -mt-5 flex w-[calc(100%+2.5rem)] items-center border-b-[4px] border-ink bg-tertiary px-4 py-2 font-mono text-xs font-bold uppercase text-on-tertiary">
+              Daemon {daemonStatus.state}
+            </div>
+            <h2 id="daemon-offline-title" className="m-0 font-display text-2xl font-bold uppercase">
+              Terminal workspace unavailable
+            </h2>
+            <p className="m-0 font-mono text-sm text-on-surface-variant">
+              Start the daemon from Settings to reconnect the saved tabs. Project and Terminal
+              configuration remain preserved.
+            </p>
+            <button type="button" className="btn" onClick={() => setShowSettings(true)}>
+              <IconSettings />
+              Open daemon controls
+            </button>
+          </section>
         ) : terminalForm?.mode === "create" ? (
           <ConfigureTerminalPage
             mode="create"
@@ -725,7 +902,7 @@ function App() {
                   const info = terminals.find((t) => t.id === terminalId);
                   return (
                     <div
-                      key={terminalId}
+                      key={`${terminalId}-${daemonConnectionEpoch}`}
                       className="flex min-h-0 flex-1"
                       style={{ display: terminalId === activeTerminalId ? undefined : "none" }}
                     >

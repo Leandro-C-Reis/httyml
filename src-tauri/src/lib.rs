@@ -1,14 +1,16 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use httyml_daemon::default_socket_path;
 use httyml_daemon::framing::{read_frame, write_frame};
 use httyml_daemon::project::ProjectScript;
 use httyml_daemon::protocol::{
     ClientMessage, DaemonMessage, ProjectInfo, TerminalConfigInfo, TerminalInfo,
 };
+use httyml_daemon::{default_log_path, default_socket_path, read_daemon_pid};
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_shell::ShellExt;
 use tokio::net::UnixStream;
@@ -19,12 +21,15 @@ use tokio::sync::{mpsc, Mutex};
 /// directions down instead of leaving them idling forever on a Terminal
 /// that no longer exists.
 struct AttachedTerminal {
+    connection_id: u64,
     sender: mpsc::UnboundedSender<ClientMessage>,
     reader_task: tokio::task::AbortHandle,
+    writer_task: tokio::task::AbortHandle,
 }
 
 struct AttachedTerminals {
-    entries: Mutex<HashMap<String, AttachedTerminal>>,
+    entries: Arc<Mutex<HashMap<String, AttachedTerminal>>>,
+    next_connection_id: AtomicU64,
 }
 
 impl AttachedTerminals {
@@ -34,14 +39,21 @@ impl AttachedTerminals {
         terminal_id: String,
         msg_for: impl FnOnce(String) -> ClientMessage,
     ) -> Result<(), String> {
-        let entries = self.entries.lock().await;
-        let entry = entries
+        let mut entries = self.entries.lock().await;
+        let closed = entries
             .get(&terminal_id)
-            .ok_or_else(|| "terminal not attached".to_string())?;
-        entry
+            .ok_or_else(|| "terminal not attached".to_string())?
             .sender
-            .send(msg_for(terminal_id))
-            .map_err(|_| "channel closed".to_string())
+            .send(msg_for(terminal_id.clone()))
+            .is_err();
+        if !closed {
+            return Ok(());
+        }
+        if let Some(entry) = entries.remove(&terminal_id) {
+            entry.reader_task.abort();
+            entry.writer_task.abort();
+        }
+        Err("terminal connection closed".to_string())
     }
 
     /// Tears down an attached Terminal's connection: aborts its reader task
@@ -53,6 +65,24 @@ impl AttachedTerminals {
     async fn forget(&self, terminal_id: &str) {
         if let Some(entry) = self.entries.lock().await.remove(terminal_id) {
             entry.reader_task.abort();
+            entry.writer_task.abort();
+        }
+    }
+
+    /// Drops every stream before stopping or replacing the daemon. A later
+    /// TerminalView mount can then attach afresh and receive its replayed
+    /// scrollback instead of hitting the old idempotent entry.
+    async fn forget_all(&self) {
+        let entries: Vec<AttachedTerminal> = self
+            .entries
+            .lock()
+            .await
+            .drain()
+            .map(|(_, entry)| entry)
+            .collect();
+        for entry in entries {
+            entry.reader_task.abort();
+            entry.writer_task.abort();
         }
     }
 }
@@ -90,6 +120,48 @@ async fn send_one(msg: ClientMessage) -> Result<DaemonMessage, String> {
     serde_json::from_slice(&frame).map_err(|e| e.to_string())
 }
 
+const DAEMON_TIMEOUT: Duration = Duration::from_secs(1);
+
+#[derive(serde::Serialize, Clone)]
+struct DaemonStatus {
+    /// `Running` answers Ping, `Stopped` has no socket listener, and
+    /// `Unresponsive` still owns the socket but cannot complete the handshake.
+    state: String,
+    pid: Option<u32>,
+    build_id: Option<String>,
+    log_path: String,
+}
+
+#[derive(serde::Serialize)]
+struct DaemonLogs {
+    path: String,
+    content: String,
+    truncated: bool,
+}
+
+async fn daemon_status_snapshot() -> DaemonStatus {
+    match tokio::time::timeout(DAEMON_TIMEOUT, send_one(ClientMessage::Ping)).await {
+        Ok(Ok(DaemonMessage::Pong { build_id, pid })) => DaemonStatus {
+            state: "Running".to_string(),
+            pid: Some(pid),
+            build_id: Some(build_id),
+            log_path: default_log_path().display().to_string(),
+        },
+        _ if is_daemon_running().await => DaemonStatus {
+            state: "Unresponsive".to_string(),
+            pid: read_daemon_pid(),
+            build_id: None,
+            log_path: default_log_path().display().to_string(),
+        },
+        _ => DaemonStatus {
+            state: "Stopped".to_string(),
+            pid: None,
+            build_id: None,
+            log_path: default_log_path().display().to_string(),
+        },
+    }
+}
+
 /// Runs the sidecar binary itself with `--build-id` (exits immediately,
 /// never touches the socket) to learn what build is actually on disk right
 /// now, independent of whatever's currently running.
@@ -109,19 +181,35 @@ async fn on_disk_build_id(app: &AppHandle) -> Result<String, String> {
 /// disk — including if it doesn't answer `Ping` at all, which covers a
 /// Daemon old enough to predate this handshake entirely.
 async fn running_daemon_is_stale(app: &AppHandle) -> Result<bool, String> {
-    let running_build_id = match send_one(ClientMessage::Ping).await {
-        Ok(DaemonMessage::Pong { build_id }) => build_id,
-        _ => return Ok(true),
-    };
+    let running_build_id =
+        match tokio::time::timeout(DAEMON_TIMEOUT, send_one(ClientMessage::Ping)).await {
+            Ok(Ok(DaemonMessage::Pong { build_id, .. })) => build_id,
+            _ => return Ok(true),
+        };
     Ok(running_build_id != on_disk_build_id(app).await?)
 }
 
-async fn wait_until_daemon_stops() {
+async fn wait_until_daemon_stops() -> bool {
     for _ in 0..50 {
         if !is_daemon_running().await {
-            return;
+            return true;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    false
+}
+
+/// A graceful shutdown deliberately does not wait for a reply: the daemon
+/// exits after it stops every PTY, so a closed socket is the acknowledgement.
+async fn request_daemon_shutdown() -> Result<(), String> {
+    if !is_daemon_running().await {
+        return Ok(());
+    }
+    let _ = tokio::time::timeout(DAEMON_TIMEOUT, send_one(ClientMessage::Shutdown)).await;
+    if wait_until_daemon_stops().await {
+        Ok(())
+    } else {
+        Err("daemon did not stop; use Force kill if it remains unresponsive".to_string())
     }
 }
 
@@ -138,10 +226,60 @@ async fn ensure_daemon(app: AppHandle) -> Result<(), String> {
         // Terminal process back to `Stopped`, same as any other Daemon
         // restart (see `TerminalHandle::reload`'s doc comment) — Terminals
         // themselves aren't lost, since their config is persisted.
-        let _ = send_one(ClientMessage::Shutdown).await;
-        wait_until_daemon_stops().await;
+        request_daemon_shutdown().await?;
     }
     spawn_daemon_sidecar(&app).await
+}
+
+#[tauri::command]
+async fn daemon_status() -> DaemonStatus {
+    daemon_status_snapshot().await
+}
+
+#[tauri::command]
+async fn read_daemon_logs() -> Result<DaemonLogs, String> {
+    let (content, truncated) =
+        httyml_daemon::read_log_tail(512 * 1024).map_err(|err| err.to_string())?;
+    Ok(DaemonLogs {
+        path: default_log_path().display().to_string(),
+        content,
+        truncated,
+    })
+}
+
+#[tauri::command]
+async fn start_daemon(app: AppHandle) -> Result<(), String> {
+    match daemon_status_snapshot().await.state.as_str() {
+        "Running" => Ok(()),
+        "Unresponsive" => {
+            Err("daemon is unresponsive; force kill it before starting a replacement".to_string())
+        }
+        _ => spawn_daemon_sidecar(&app).await,
+    }
+}
+
+#[tauri::command]
+async fn stop_daemon(state: State<'_, AttachedTerminals>) -> Result<(), String> {
+    state.forget_all().await;
+    request_daemon_shutdown().await
+}
+
+#[tauri::command]
+async fn restart_daemon(app: AppHandle, state: State<'_, AttachedTerminals>) -> Result<(), String> {
+    state.forget_all().await;
+    request_daemon_shutdown().await?;
+    spawn_daemon_sidecar(&app).await
+}
+
+#[tauri::command]
+async fn force_kill_daemon(state: State<'_, AttachedTerminals>) -> Result<(), String> {
+    state.forget_all().await;
+    httyml_daemon::force_kill_daemon().map_err(|err| err.to_string())?;
+    if wait_until_daemon_stops().await {
+        Ok(())
+    } else {
+        Err("daemon process was signalled but its socket is still present".to_string())
+    }
 }
 
 #[tauri::command]
@@ -261,7 +399,10 @@ async fn export_config(
     extra: serde_json::Map<String, serde_json::Value>,
 ) -> Result<(), String> {
     let (projects, terminals) = match send_one(ClientMessage::ExportConfig).await? {
-        DaemonMessage::Config { projects, terminals } => (projects, terminals),
+        DaemonMessage::Config {
+            projects,
+            terminals,
+        } => (projects, terminals),
         DaemonMessage::Error { message } => return Err(message),
         _ => return Err("unexpected response from daemon".to_string()),
     };
@@ -294,7 +435,10 @@ async fn import_config(path: String) -> Result<ImportConfigResult, String> {
     })
     .await?
     {
-        DaemonMessage::Config { projects, terminals } => Ok(ImportConfigResult {
+        DaemonMessage::Config {
+            projects,
+            terminals,
+        } => Ok(ImportConfigResult {
             terminal_count: terminals.len(),
             projects,
             extra: file.extra,
@@ -388,6 +532,7 @@ async fn attach_terminal(
         }
     }
 
+    let connection_id = state.next_connection_id.fetch_add(1, Ordering::Relaxed);
     let stream = UnixStream::connect(default_socket_path())
         .await
         .map_err(|e| e.to_string())?;
@@ -399,7 +544,7 @@ async fn attach_terminal(
     })
     .map_err(|_| "channel closed".to_string())?;
 
-    tokio::spawn(async move {
+    let writer_task = tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             let Ok(payload) = serde_json::to_vec(&msg) else {
                 continue;
@@ -408,9 +553,12 @@ async fn attach_terminal(
                 break;
             }
         }
-    });
+    })
+    .abort_handle();
 
     let event_name = format!("terminal-output-{terminal_id}");
+    let entries = state.entries.clone();
+    let reader_terminal_id = terminal_id.clone();
     let reader_task = tokio::spawn(async move {
         loop {
             let frame = match read_frame(&mut read_half).await {
@@ -424,14 +572,28 @@ async fn attach_terminal(
                 break;
             }
         }
+        // A daemon restart or a lost sidecar connection must not leave an
+        // idempotent entry behind. Only remove our own generation: a newer
+        // attachment may already have replaced this one.
+        let mut entries = entries.lock().await;
+        let is_current = entries
+            .get(&reader_terminal_id)
+            .is_some_and(|entry| entry.connection_id == connection_id);
+        if is_current {
+            if let Some(entry) = entries.remove(&reader_terminal_id) {
+                entry.writer_task.abort();
+            }
+        }
     })
     .abort_handle();
 
     state.entries.lock().await.insert(
         terminal_id,
         AttachedTerminal {
+            connection_id,
             sender: tx,
             reader_task,
+            writer_task,
         },
     );
     Ok(())
@@ -576,10 +738,17 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(AttachedTerminals {
-            entries: Mutex::new(HashMap::new()),
+            entries: Arc::new(Mutex::new(HashMap::new())),
+            next_connection_id: AtomicU64::new(1),
         })
         .invoke_handler(tauri::generate_handler![
             ensure_daemon,
+            daemon_status,
+            read_daemon_logs,
+            start_daemon,
+            stop_daemon,
+            restart_daemon,
+            force_kill_daemon,
             create_project,
             update_project,
             set_project_scripts,

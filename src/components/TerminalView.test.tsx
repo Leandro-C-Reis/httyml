@@ -11,6 +11,11 @@ const mockDispose = vi.fn();
 const mockFit = vi.fn();
 const mockOnData = vi.fn();
 const mockFocus = vi.fn();
+const terminalLinkMocks = vi.hoisted(() => ({
+  openUrl: vi.fn().mockResolvedValue(undefined),
+  webLinksAddon: vi.fn(),
+  handler: undefined as ((event: MouseEvent, uri: string) => void) | undefined,
+}));
 // Mutable so individual tests can simulate "a TUI program left the
 // alternate screen buffer active" by flipping `.type` before dispatching
 // the StateChanged that should (or shouldn't) react to it.
@@ -41,6 +46,18 @@ vi.mock("@xterm/addon-fit", () => ({
       fit: mockFit,
     };
   }),
+}));
+
+vi.mock("@xterm/addon-web-links", () => ({
+  WebLinksAddon: vi.fn().mockImplementation(function WebLinksAddonMock(handler: (event: MouseEvent, uri: string) => void) {
+    terminalLinkMocks.handler = handler;
+    terminalLinkMocks.webLinksAddon(handler);
+    return {};
+  }),
+}));
+
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openUrl: terminalLinkMocks.openUrl,
 }));
 
 vi.mock("../lib/daemon", async () => {
@@ -91,6 +108,7 @@ describe("TerminalView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockBuffer.active.type = "normal";
+    terminalLinkMocks.handler = undefined;
   });
 
   it("attaches to the terminal and subscribes to its output on mount", async () => {
@@ -100,6 +118,18 @@ describe("TerminalView", () => {
       expect(daemon.attachTerminal).toHaveBeenCalledWith("abc123");
       expect(daemon.onTerminalOutput).toHaveBeenCalledWith("abc123", expect.any(Function));
     });
+  });
+
+  it("opens HTTP(S) terminal links in the default browser and rejects other schemes", async () => {
+    renderTerminalView();
+    await waitFor(() => expect(terminalLinkMocks.webLinksAddon).toHaveBeenCalled());
+
+    terminalLinkMocks.handler?.(new MouseEvent("click"), "https://example.com/docs");
+    await waitFor(() => expect(terminalLinkMocks.openUrl).toHaveBeenCalledWith(expect.any(URL)));
+    expect((terminalLinkMocks.openUrl.mock.calls[0][0] as URL).href).toBe("https://example.com/docs");
+
+    terminalLinkMocks.handler?.(new MouseEvent("click"), "file:///etc/passwd");
+    expect(terminalLinkMocks.openUrl).toHaveBeenCalledTimes(1);
   });
 
   it("does not touch the display for the initial attach state, or a fresh start that isn't stuck in the alternate buffer", async () => {

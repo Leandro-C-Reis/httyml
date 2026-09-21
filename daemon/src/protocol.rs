@@ -251,5 +251,6 @@ pub enum DaemonMessage {
     /// Reply to `ClientMessage::Ping`, reporting this process's `BUILD_ID`.
     Pong {
         build_id: String,
+        pid: u32,
     },
 }

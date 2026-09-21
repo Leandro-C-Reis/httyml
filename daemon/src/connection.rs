@@ -6,12 +6,14 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use tokio::net::unix::OwnedWriteHalf;
 use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{Mutex as AsyncMutex, Notify};
+use tokio::sync::{watch, Mutex as AsyncMutex, Notify};
 use uuid::Uuid;
 
 use crate::framing::{read_frame, write_frame};
 use crate::project::Project;
-use crate::protocol::{ClientMessage, DaemonMessage, ProjectInfo, TerminalConfigInfo, TerminalInfo};
+use crate::protocol::{
+    ClientMessage, DaemonMessage, ProjectInfo, TerminalConfigInfo, TerminalInfo,
+};
 use crate::store;
 use crate::terminal::{TerminalConfig, TerminalHandle, DEFAULT_SCROLLBACK_LINES};
 
@@ -106,10 +108,10 @@ fn persist(registry: &Arc<Registry>) {
     drop(terminals_lock);
 
     if let Err(err) = store::save(&registry.config_path, &projects, &terminals) {
-        eprintln!(
-            "httyml-daemon: failed to persist config to {:?}: {err:#}",
+        crate::logging::error(format!(
+            "failed to persist config to {:?}: {err:#}",
             registry.config_path
-        );
+        ));
     }
 }
 
@@ -156,6 +158,36 @@ fn current_config(registry: &Arc<Registry>) -> (Vec<ProjectInfo>, Vec<TerminalCo
 
 type SharedWriter = Arc<AsyncMutex<OwnedWriteHalf>>;
 
+/// Removes its PID file only when it still belongs to this daemon instance.
+/// A force-kill can remove it first, and a later daemon must never have its
+/// PID file deleted by an older instance unwinding.
+struct PidFileGuard {
+    path: PathBuf,
+    pid: u32,
+}
+
+impl PidFileGuard {
+    fn create(socket_path: &Path) -> anyhow::Result<Self> {
+        let path = socket_path.with_extension("pid");
+        std::fs::write(&path, std::process::id().to_string())?;
+        Ok(Self {
+            path,
+            pid: std::process::id(),
+        })
+    }
+}
+
+impl Drop for PidFileGuard {
+    fn drop(&mut self) {
+        let is_ours = std::fs::read_to_string(&self.path)
+            .ok()
+            .is_some_and(|value| value.trim() == self.pid.to_string());
+        if is_ours {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
 /// Binds the Unix socket at `socket_path` and serves client connections
 /// until a `ClientMessage::Shutdown` arrives or the process is killed,
 /// loading (and persisting to) Project/Terminal config at `config_path`.
@@ -170,7 +202,13 @@ pub async fn run(socket_path: &Path, config_path: &Path) -> anyhow::Result<()> {
     }
 
     let listener = UnixListener::bind(socket_path)?;
+    let _pid_file = PidFileGuard::create(socket_path)?;
     let registry = Registry::new(config_path.to_path_buf());
+    crate::logging::info(format!(
+        "daemon started (pid {}, socket {:?})",
+        std::process::id(),
+        socket_path
+    ));
     // Deliberately not `std::process::exit` — `run` is also driven in-process
     // by the integration test suite (many `run` calls in one test binary),
     // where exiting the process would tear down every other test with it.
@@ -186,11 +224,14 @@ pub async fn run(socket_path: &Path, config_path: &Path) -> anyhow::Result<()> {
                 let shutdown = shutdown.clone();
                 tokio::spawn(async move {
                     if let Err(err) = handle_connection(stream, registry, shutdown).await {
-                        eprintln!("httyml-daemon: connection error: {err:#}");
+                        crate::logging::error(format!("connection error: {err:#}"));
                     }
                 });
             }
             _ = shutdown.notified() => {
+                shutdown_all_terminals(&registry);
+                persist(&registry);
+                crate::logging::info("daemon stopped gracefully");
                 return Ok(());
             }
         }
@@ -216,12 +257,28 @@ fn stop_and_forget(registry: &Arc<Registry>, handle: &Arc<TerminalHandle>) {
         .retain(|id| id != &handle.id);
 }
 
+/// A daemon stop is intentionally different from dropping its Registry:
+/// explicitly stop each foreground process group first, then preserve every
+/// Project and Terminal configuration for the next daemon instance.
+fn shutdown_all_terminals(registry: &Arc<Registry>) {
+    let handles: Vec<Arc<TerminalHandle>> = registry
+        .terminals
+        .lock()
+        .unwrap()
+        .values()
+        .cloned()
+        .collect();
+    for handle in handles {
+        log_err(handle.stop());
+    }
+}
+
 /// Logs a fire-and-forget command's failure (e.g. writing to a `Stopped`
 /// Terminal) instead of silently dropping it — these commands have no
 /// response in the protocol, so this is the only visibility into failures.
 fn log_err(result: anyhow::Result<()>) {
     if let Err(err) = result {
-        eprintln!("httyml-daemon: {err:#}");
+        crate::logging::error(format!("{err:#}"));
     }
 }
 
@@ -232,6 +289,10 @@ async fn handle_connection(
 ) -> anyhow::Result<()> {
     let (mut read_half, write_half) = stream.into_split();
     let writer: SharedWriter = Arc::new(AsyncMutex::new(write_half));
+    // Every Attach forwarder receives this watcher. Once the input side of
+    // its client closes, the sender is dropped and idle forwarders release
+    // their writer clone instead of pinning a dead Unix connection forever.
+    let (disconnect_tx, disconnect_rx) = watch::channel(());
 
     loop {
         let frame = match read_frame(&mut read_half).await {
@@ -239,8 +300,9 @@ async fn handle_connection(
             Err(_) => break, // client disconnected
         };
         let msg: ClientMessage = serde_json::from_slice(&frame)?;
-        handle_message(msg, &registry, &writer, &shutdown).await?;
+        handle_message(msg, &registry, &writer, &shutdown, disconnect_rx.clone()).await?;
     }
+    drop(disconnect_tx);
     Ok(())
 }
 
@@ -256,6 +318,7 @@ async fn handle_message(
     registry: &Arc<Registry>,
     writer: &SharedWriter,
     shutdown: &Arc<Notify>,
+    mut disconnect: watch::Receiver<()>,
 ) -> anyhow::Result<()> {
     match msg {
         ClientMessage::CreateProject { name } => {
@@ -520,6 +583,7 @@ async fn handle_message(
                 use tokio::sync::broadcast::error::RecvError;
                 loop {
                     tokio::select! {
+                        _ = disconnect.changed() => break,
                         chunk = output_rx.recv() => {
                             let chunk = match chunk {
                                 Ok(chunk) => chunk,
@@ -560,7 +624,7 @@ async fn handle_message(
             if let Some(handle) = lookup(registry, &terminal_id) {
                 match STANDARD.decode(data) {
                     Ok(bytes) => log_err(handle.write_input(&bytes)),
-                    Err(err) => eprintln!("httyml-daemon: invalid Write payload: {err:#}"),
+                    Err(err) => crate::logging::error(format!("invalid Write payload: {err:#}")),
                 }
             }
         }
@@ -630,15 +694,30 @@ async fn handle_message(
         }
         ClientMessage::ExportConfig => {
             let (projects, terminals) = current_config(registry);
-            send(writer, &DaemonMessage::Config { projects, terminals }).await?;
+            send(
+                writer,
+                &DaemonMessage::Config {
+                    projects,
+                    terminals,
+                },
+            )
+            .await?;
         }
-        ClientMessage::ImportConfig { projects, terminals } => {
+        ClientMessage::ImportConfig {
+            projects,
+            terminals,
+        } => {
             // Stop and drop every currently running Terminal first — same
             // reasoning as `DeleteProject`'s cascade, just over everything
             // instead of one Project's worth, so nothing from the state
             // being replaced is left running underneath the import.
-            let existing: Vec<Arc<TerminalHandle>> =
-                registry.terminals.lock().unwrap().values().cloned().collect();
+            let existing: Vec<Arc<TerminalHandle>> = registry
+                .terminals
+                .lock()
+                .unwrap()
+                .values()
+                .cloned()
+                .collect();
             for handle in &existing {
                 stop_and_forget(registry, handle);
             }
@@ -690,13 +769,21 @@ async fn handle_message(
             }
             persist(registry);
             let (projects, terminals) = current_config(registry);
-            send(writer, &DaemonMessage::Config { projects, terminals }).await?;
+            send(
+                writer,
+                &DaemonMessage::Config {
+                    projects,
+                    terminals,
+                },
+            )
+            .await?;
         }
         ClientMessage::Ping => {
             send(
                 writer,
                 &DaemonMessage::Pong {
                     build_id: crate::BUILD_ID.to_string(),
+                    pid: std::process::id(),
                 },
             )
             .await?;

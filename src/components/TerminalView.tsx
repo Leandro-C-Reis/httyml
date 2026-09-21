@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import "@xterm/xterm/css/xterm.css";
 import {
   attachTerminal,
@@ -60,6 +62,18 @@ function stateLabel(state: TerminalState): string {
   return `exited (${state.Exited.exit_code})`;
 }
 
+function openTerminalLink(uri: string) {
+  try {
+    const parsed = new URL(uri);
+    // Terminal output is untrusted. The addon only surfaces web-like links,
+    // but retain an explicit protocol allowlist before delegating to the OS.
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return;
+    void openUrl(parsed).catch((error) => console.error("failed to open terminal link", error));
+  } catch {
+    // A malformed sequence is simply not a link.
+  }
+}
+
 export function TerminalView({
   terminalId,
   name,
@@ -90,6 +104,7 @@ export function TerminalView({
     termRef.current = term;
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
+    term.loadAddon(new WebLinksAddon((_event, uri) => openTerminalLink(uri)));
 
     if (containerRef.current) {
       term.open(containerRef.current);

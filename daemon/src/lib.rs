@@ -1,5 +1,6 @@
 pub mod connection;
 pub mod framing;
+pub mod logging;
 pub mod project;
 pub mod protocol;
 pub mod store;
@@ -28,4 +29,74 @@ pub fn default_config_path() -> PathBuf {
             PathBuf::from(home).join(".config")
         });
     base.join("httyml").join("projects.json")
+}
+
+/// Persistent daemon diagnostics, separate from user configuration so log
+/// rotation can never risk Project or Terminal data.
+pub fn default_log_path() -> PathBuf {
+    let base = std::env::var("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            PathBuf::from(home).join(".local").join("state")
+        });
+    base.join("httyml").join("daemon.log")
+}
+
+/// The PID belongs beside the Unix socket, which gives it the same
+/// per-login lifetime and permissions as the daemon IPC endpoint.
+pub fn default_pid_path() -> PathBuf {
+    default_socket_path().with_extension("pid")
+}
+
+pub fn read_daemon_pid() -> Option<u32> {
+    std::fs::read_to_string(default_pid_path())
+        .ok()?
+        .trim()
+        .parse::<u32>()
+        .ok()
+}
+
+/// Terminates only a verified HTTYML daemon. This is intentionally separate
+/// from protocol shutdown: it remains available when the daemon is hung and
+/// no longer reading its Unix socket.
+pub fn force_kill_daemon() -> anyhow::Result<()> {
+    let pid_path = default_pid_path();
+    let pid = read_daemon_pid()
+        .ok_or_else(|| anyhow::anyhow!("daemon PID file is missing or invalid"))?;
+    let executable = std::fs::read_link(format!("/proc/{pid}/exe"))?;
+    let is_daemon = executable
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with("httyml-daemon"));
+    if !is_daemon {
+        return Err(anyhow::anyhow!(
+            "PID file does not point to an HTTYML daemon"
+        ));
+    }
+    let result = unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL) };
+    if result != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let _ = std::fs::remove_file(pid_path);
+    Ok(())
+}
+
+/// Reads a bounded tail so IPC never has to transfer an unbounded diagnostics
+/// file. Invalid UTF-8 is lossily rendered, as daemon diagnostics are text.
+pub fn read_log_tail(max_bytes: usize) -> anyhow::Result<(String, bool)> {
+    let bytes = match std::fs::read(default_log_path()) {
+        Ok(bytes) => bytes,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            return Ok((String::new(), false))
+        }
+        Err(err) => return Err(err.into()),
+    };
+    let truncated = bytes.len() > max_bytes;
+    let tail = if truncated {
+        &bytes[bytes.len() - max_bytes..]
+    } else {
+        &bytes
+    };
+    Ok((String::from_utf8_lossy(tail).into_owned(), truncated))
 }
