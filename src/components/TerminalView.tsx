@@ -323,7 +323,7 @@ export function TerminalView({
               {isRunning ? (
                 <button
                   type="button"
-                  className={`${actionBtn} bg-error text-on-error`}
+                  className={`${actionBtn} bg-tertiary text-on-tertiary`}
                   onClick={() =>
                     void stopTerminal(terminalId).catch((err) =>
                       onError(err instanceof Error ? err.message : String(err)),

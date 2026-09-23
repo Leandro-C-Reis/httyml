@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
-import { readPackageScripts, type ProjectScript, type ScriptArg } from "../lib/daemon";
-import { buildScriptCommand, shellQuote } from "../lib/scriptCommand";
+import {
+  openInVsCode,
+  readPackageScripts,
+  type ProjectScript,
+  type ScriptArg,
+} from "../lib/daemon";
+import { buildScriptCommand } from "../lib/scriptCommand";
 import { IconCheck, IconEdit, IconPackageJson, IconPlay, IconPlus,  IconTerminal, IconTrash, IconVisualStudioCode, IconX } from "./icons";
 import { projectColor } from "./projectStyle";
 
@@ -296,6 +301,7 @@ export function TerminalSideMenu({
   const [packageScripts, setPackageScripts] = useState<[string, string][]>([]);
   const [runningScript, setRunningScript] = useState<ProjectScript | null>(null);
   const [editingScript, setEditingScript] = useState<ProjectScript | null>(null);
+  const [openingVsCode, setOpeningVsCode] = useState(false);
 
   // Re-read on every open (and whenever the directory changes): the file is
   // edited outside this app all the time, so a cached list goes stale.
@@ -332,6 +338,17 @@ export function TerminalSideMenu({
     const exists = scripts.some((s) => s.id === script.id);
     onScriptsChange(exists ? scripts.map((s) => (s.id === script.id ? script : s)) : [...scripts, script]);
     setEditingScript(null);
+  }
+
+  async function openVsCode() {
+    setOpeningVsCode(true);
+    try {
+      await openInVsCode(cwd);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOpeningVsCode(false);
+    }
   }
 
   const buttonsContainerClass = openPanel
@@ -490,8 +507,9 @@ export function TerminalSideMenu({
           aria-label="Open in VS Code"
           title="Open in VS Code"
           className={`${panelButton} text-blue-500`}
-          disabled={!cwd.trim()}
-          onClick={() => onRun(`code ${shellQuote(cwd)}`)}
+          disabled={!cwd.trim() || openingVsCode}
+          aria-busy={openingVsCode}
+          onClick={() => void openVsCode()}
         >
           <IconVisualStudioCode />
         </button>

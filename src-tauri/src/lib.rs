@@ -362,6 +362,29 @@ async fn read_package_scripts(cwd: String) -> Result<Vec<(String, String)>, Stri
         .collect())
 }
 
+/// Starts VS Code for a directory without sending a command through a
+/// Terminal's PTY. The executable is fixed and the directory is passed as a
+/// single argument, so this never invokes a shell.
+#[tauri::command]
+fn open_in_vscode(cwd: String) -> Result<(), String> {
+    if cwd.trim().is_empty() {
+        return Err("cannot open VS Code without a directory".to_string());
+    }
+
+    std::process::Command::new("code")
+        .arg(&cwd)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| {
+            format!(
+                "could not start VS Code; make sure the code command is available on PATH: {error}"
+            )
+        })
+}
+
 #[tauri::command]
 async fn list_projects() -> Result<Vec<ProjectInfo>, String> {
     match send_one(ClientMessage::ListProjects).await? {
@@ -753,6 +776,7 @@ pub fn run() {
             update_project,
             set_project_scripts,
             read_package_scripts,
+            open_in_vscode,
             list_projects,
             reorder_projects,
             export_config,

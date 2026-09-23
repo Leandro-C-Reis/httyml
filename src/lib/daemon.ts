@@ -133,6 +133,12 @@ export async function readPackageScripts(cwd: string): Promise<[string, string][
   return invoke<[string, string][]>("read_package_scripts", { cwd });
 }
 
+/// Opens VS Code for a directory from the app process, leaving the Terminal
+/// process and input buffer untouched.
+export async function openInVsCode(cwd: string): Promise<void> {
+  await invoke("open_in_vscode", { cwd });
+}
+
 export async function listProjects(): Promise<ProjectInfo[]> {
   return invoke<ProjectInfo[]>("list_projects");
 }

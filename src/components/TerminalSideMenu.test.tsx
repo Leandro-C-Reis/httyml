@@ -6,22 +6,24 @@ import * as daemon from "../lib/daemon";
 
 vi.mock("../lib/daemon", () => ({
   readPackageScripts: vi.fn().mockResolvedValue([]),
+  openInVsCode: vi.fn().mockResolvedValue(undefined),
 }));
 
 function renderMenu(overrides: Partial<Parameters<typeof TerminalSideMenu>[0]> = {}) {
   const onScriptsChange = vi.fn();
   const onRun = vi.fn();
+  const onError = overrides.onError ?? vi.fn();
   render(
     <TerminalSideMenu
       cwd="/home/dev/project"
       scripts={[]}
       onScriptsChange={onScriptsChange}
       onRun={onRun}
-      onError={vi.fn()}
+      onError={onError}
       {...overrides}
     />,
   );
-  return { onScriptsChange, onRun };
+  return { onScriptsChange, onRun, onError };
 }
 
 const syncScript = {
@@ -147,20 +149,33 @@ describe("TerminalSideMenu", () => {
     expect(onRun).toHaveBeenCalledWith("npm run dev");
   });
 
-  it("opens VS Code in the Terminal's directory", async () => {
+  it("opens VS Code in the Terminal's directory without using the Terminal", async () => {
     const { onRun } = renderMenu();
 
     await userEvent.click(screen.getByRole("button", { name: "Open in VS Code" }));
 
-    expect(onRun).toHaveBeenCalledWith("code /home/dev/project");
+    await waitFor(() => expect(daemon.openInVsCode).toHaveBeenCalledWith("/home/dev/project"));
+    expect(onRun).not.toHaveBeenCalled();
   });
 
-  it("quotes a directory with spaces when opening VS Code", async () => {
-    const { onRun } = renderMenu({ cwd: "/home/dev/my project" });
+  it("passes a directory with spaces directly to VS Code", async () => {
+    renderMenu({ cwd: "/home/dev/my project" });
 
     await userEvent.click(screen.getByRole("button", { name: "Open in VS Code" }));
 
-    expect(onRun).toHaveBeenCalledWith("code '/home/dev/my project'");
+    await waitFor(() =>
+      expect(daemon.openInVsCode).toHaveBeenCalledWith("/home/dev/my project"),
+    );
+  });
+
+  it("reports a failed VS Code launch without using the Terminal", async () => {
+    vi.mocked(daemon.openInVsCode).mockRejectedValueOnce(new Error("code command unavailable"));
+    const { onError, onRun } = renderMenu();
+
+    await userEvent.click(screen.getByRole("button", { name: "Open in VS Code" }));
+
+    await waitFor(() => expect(onError).toHaveBeenCalledWith("code command unavailable"));
+    expect(onRun).not.toHaveBeenCalled();
   });
 
   it("closes the open panel when its button is clicked again", async () => {
