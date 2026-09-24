@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SettingsPage } from "./SettingsPage";
 import { THEMES } from "../lib/theme";
@@ -20,17 +20,18 @@ function renderPage(overrides: Partial<Parameters<typeof SettingsPage>[0]> = {})
   const onStopDaemon = vi.fn().mockResolvedValue(undefined);
   const onRestartDaemon = vi.fn().mockResolvedValue(undefined);
   const onForceKillDaemon = vi.fn().mockResolvedValue(undefined);
+  const onColorsChange = vi.fn();
+  const onResetThemeColors = vi.fn();
   render(
     <SettingsPage
       currentTheme="terminal-core"
       onSelectTheme={onSelectTheme}
       crtFilterEnabled
-      terminalBackground="#050505"
-      appBackground="#eeeeee"
+      colors={THEMES[0].colors}
       backgroundPattern="horizontal-stripes"
       onCrtFilterChange={vi.fn()}
-      onTerminalBackgroundChange={vi.fn()}
-      onAppBackgroundChange={vi.fn()}
+      onColorsChange={onColorsChange}
+      onResetThemeColors={onResetThemeColors}
       onBackgroundPatternChange={vi.fn()}
       onBack={onBack}
       onExport={onExport}
@@ -46,7 +47,7 @@ function renderPage(overrides: Partial<Parameters<typeof SettingsPage>[0]> = {})
       {...overrides}
     />,
   );
-  return { onSelectTheme, onBack, onExport, onImport, onRefreshDaemon, onStartDaemon, onStopDaemon, onRestartDaemon, onForceKillDaemon };
+  return { onSelectTheme, onBack, onExport, onImport, onRefreshDaemon, onStartDaemon, onStopDaemon, onRestartDaemon, onForceKillDaemon, onColorsChange, onResetThemeColors };
 }
 
 describe("SettingsPage", () => {
@@ -69,6 +70,40 @@ describe("SettingsPage", () => {
     await userEvent.click(screen.getByRole("button", { name: "Forest" }));
 
     expect(onSelectTheme).toHaveBeenCalledWith("forest");
+  });
+
+  it("keeps the Appearance controls in an internal scroll container", () => {
+    renderPage();
+
+    const appearanceCard = screen.getByRole("region", { name: "Appearance" });
+    const scrollArea = screen.getByTestId("appearance-scroll");
+    expect(appearanceCard).toHaveClass("min-h-0");
+    expect(scrollArea).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
+  });
+
+  it("filters profiles and updates independent border, text, and shadow roles", async () => {
+    const { onColorsChange, onResetThemeColors } = renderPage();
+
+    await userEvent.click(screen.getByRole("button", { name: "dark" }));
+    expect(screen.getByRole("button", { name: "Midnight" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sunset" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Borders"), {
+      target: { value: "#123456" },
+    });
+    expect(onColorsChange).toHaveBeenCalledWith(
+      expect.objectContaining({ border: "#123456" }),
+    );
+    fireEvent.change(screen.getByLabelText("Primary text"), { target: { value: "#234567" } });
+    expect(onColorsChange).toHaveBeenCalledWith(expect.objectContaining({ text: "#234567" }));
+    fireEvent.change(screen.getByLabelText("Hard shadows"), { target: { value: "#345678" } });
+    expect(onColorsChange).toHaveBeenCalledWith(expect.objectContaining({ shadow: "#345678" }));
+    fireEvent.change(screen.getByLabelText("Card headers"), { target: { value: "#456789" } });
+    expect(onColorsChange).toHaveBeenCalledWith(expect.objectContaining({ cardHeader: "#456789" }));
+    fireEvent.change(screen.getByLabelText("Card borders"), { target: { value: "#56789a" } });
+    expect(onColorsChange).toHaveBeenCalledWith(expect.objectContaining({ cardBorder: "#56789a" }));
+    await userEvent.click(screen.getByRole("button", { name: "Reset palette" }));
+    expect(onResetThemeColors).toHaveBeenCalledTimes(1);
   });
 
   it("toggles the CRT filter from its visual preview", async () => {

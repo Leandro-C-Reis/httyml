@@ -93,7 +93,7 @@ function RunScriptForm({
         </button>
         <button
           type="button"
-          className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-ink"
+          className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-text"
           onClick={onCancel}
         >
           <IconX />
@@ -256,7 +256,7 @@ function EditScriptForm({
         })}
         <button
           type="button"
-          className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-ink"
+          className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-text"
           onClick={addArg}
         >
           <IconPlus />
@@ -274,7 +274,7 @@ function EditScriptForm({
         </button>
         <button
           type="button"
-          className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-ink"
+          className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-text"
           onClick={onCancel}
         >
           <IconX />
@@ -392,7 +392,7 @@ export function TerminalSideMenu({
                 )}
                 <ul className="m-0 flex list-none flex-col gap-4 p-0">
                   {scripts.map((script) => (
-                    <li key={script.id} className="flex flex-col gap-1 border-2 border-ink p-2 shadow-[6px_6px_0_var(--color-ink)]" style={projectColor('blue').tint}>
+                    <li key={script.id} className="flex flex-col gap-1 border-2 border-ink p-2 shadow-[6px_6px_0_var(--color-hard-shadow)] bg-surface-variant" >
                       <span className="font-mono text-sm font-bold">{script.name}</span>
                       <code className="font-mono text-[0.6875rem] break-all text-on-surface-variant">
                         {script.command}
@@ -409,7 +409,7 @@ export function TerminalSideMenu({
                         </button>
                         <button
                           type="button"
-                          className="btn bg-surface-container-lowest px-2 py-1 text-xs text-ink"
+                          className="btn bg-surface-container-lowest px-2 py-1 text-xs text-text"
                           aria-label={`Edit ${script.name}`}
                           onClick={() => setEditingScript(script)}
                         >
@@ -451,7 +451,7 @@ export function TerminalSideMenu({
               ) : (
                 <ul className="m-0 flex list-none flex-col gap-4 p-0">
                   {packageScripts.map(([name, command]) => (
-                    <li key={name} className="flex flex-row gap-1 border-2 border-ink p-2 shadow-[6px_6px_0_var(--color-ink)]" style={projectColor('blue').tint}>
+                    <li key={name} className="flex flex-row gap-1 border-2 border-ink p-2 shadow-[6px_6px_0_var(--color-hard-shadow)]" style={projectColor('blue').tint}>
                       <div className="flex flex-1 flex-col gap-1">
                         <span className="font-mono text-sm font-bold">{name}</span>
                         <code className="font-mono text-[0.6875rem] break-all text-on-surface-variant">
@@ -484,7 +484,7 @@ export function TerminalSideMenu({
           aria-label="Project scripts"
           title="Project scripts"
           className={`${panelButton} ${
-            openPanel === "project" ? "bg-secondary text-on-secondary" : "text-surface-variant"
+            openPanel === "project" ? "bg-secondary text-on-secondary" : "text-on-primary"
           }`}
           onClick={() => togglePanel("project")}
         >
@@ -496,7 +496,7 @@ export function TerminalSideMenu({
           aria-label="package.json scripts"
           title="package.json scripts"
           className={`${panelButton} ${
-            openPanel === "package" ? "bg-secondary text-on-secondary" : "text-lime-600"
+            openPanel === "package" ? "bg-secondary text-on-secondary" : "text-secondary"
           }`}
           onClick={() => togglePanel("package")}
         >

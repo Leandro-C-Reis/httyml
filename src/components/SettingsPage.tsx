@@ -1,19 +1,26 @@
 import { useState } from "react";
 import { pickExportPath, pickImportPath } from "../lib/dialog";
 import type { DaemonLogs, DaemonStatus } from "../lib/daemon";
-import { BACKGROUND_PATTERNS, THEMES, type BackgroundPatternId, type ThemeId } from "../lib/theme";
+import {
+  BACKGROUND_PATTERNS,
+  contrastRatio,
+  THEMES,
+  type BackgroundPatternId,
+  type ThemeColors,
+  type ThemeId,
+  type ThemeMode,
+} from "../lib/theme";
 import { IconArrowLeft, IconCheck, IconDownload, IconUpload, IconX } from "./icons";
 
 type SettingsPageProps = {
   currentTheme: ThemeId;
   onSelectTheme: (id: ThemeId) => void;
   crtFilterEnabled: boolean;
-  terminalBackground: string;
-  appBackground: string;
+  colors: ThemeColors;
   backgroundPattern: BackgroundPatternId;
   onCrtFilterChange: (enabled: boolean) => void;
-  onTerminalBackgroundChange: (color: string) => void;
-  onAppBackgroundChange: (color: string) => void;
+  onColorsChange: (colors: ThemeColors) => void;
+  onResetThemeColors: () => void;
   onBackgroundPatternChange: (pattern: BackgroundPatternId) => void;
   onBack: () => void;
   /// Writes every Project, Terminal, script, and appearance preference to a
@@ -37,17 +44,69 @@ type SettingsPageProps = {
 };
 
 type DaemonAction = "stop" | "restart" | "force";
+type ThemeFilter = ThemeMode | "all";
+
+const UI_COLOR_ROLES: Array<{ key: Exclude<keyof ThemeColors, "ansi">; label: string }> = [
+  { key: "primary", label: "Primary" },
+  { key: "secondary", label: "Secondary" },
+  { key: "tertiary", label: "Tertiary" },
+  { key: "surface", label: "Base surface" },
+  { key: "surfaceContainerLowest", label: "Card surface" },
+  { key: "surfaceVariant", label: "Subtle surface" },
+  { key: "border", label: "Borders" },
+  { key: "text", label: "Primary text" },
+  { key: "shadow", label: "Hard shadows" },
+  { key: "cardHeader", label: "Card headers" },
+  { key: "cardBorder", label: "Card borders" },
+  { key: "onSurfaceVariant", label: "Muted text" },
+  { key: "appBackground", label: "Application background" },
+  { key: "backgroundPattern", label: "Pattern stroke" },
+];
+
+const TERMINAL_COLOR_ROLES: Array<{ key: Exclude<keyof ThemeColors, "ansi">; label: string }> = [
+  { key: "terminalHeader", label: "Terminal header" },
+  { key: "terminalBackground", label: "Terminal background" },
+  { key: "terminalForeground", label: "Terminal text" },
+  { key: "terminalCursor", label: "Terminal cursor" },
+  { key: "terminalSelection", label: "Terminal selection" },
+  { key: "terminalIdle", label: "Stopped terminal overlay" },
+];
+
+function ColorControl({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-3 border-2 border-ink bg-surface-container-lowest p-2 font-mono text-[0.6875rem] font-bold uppercase">
+      <span>{label}</span>
+      <span className="flex items-center gap-2">
+        <code className="text-on-surface-variant">{value}</code>
+        <input
+          type="color"
+          aria-label={label}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-7 w-10 cursor-pointer border-2 border-ink bg-transparent p-0 overflow-hidden"
+        />
+      </span>
+    </label>
+  );
+}
 
 export function SettingsPage({
   currentTheme,
   onSelectTheme,
   crtFilterEnabled,
-  terminalBackground,
-  appBackground,
+  colors,
   backgroundPattern,
   onCrtFilterChange,
-  onTerminalBackgroundChange,
-  onAppBackgroundChange,
+  onColorsChange,
+  onResetThemeColors,
   onBackgroundPatternChange,
   onBack,
   onExport,
@@ -70,6 +129,15 @@ export function SettingsPage({
   const [pendingImportPath, setPendingImportPath] = useState<string | null>(null);
   const [pendingDaemonAction, setPendingDaemonAction] = useState<DaemonAction | null>(null);
   const [daemonBusy, setDaemonBusy] = useState(false);
+  const [themeFilter, setThemeFilter] = useState<ThemeFilter>("all");
+
+  function updateColor(key: Exclude<keyof ThemeColors, "ansi">, value: string) {
+    onColorsChange({ ...colors, [key]: value });
+  }
+
+  function updateAnsiColor(key: keyof ThemeColors["ansi"], value: string) {
+    onColorsChange({ ...colors, ansi: { ...colors.ansi, [key]: value } });
+  }
 
   async function handleChooseExport() {
     const path = await pickExportPath("httyml-backup.json");
@@ -99,12 +167,16 @@ export function SettingsPage({
       ? "bg-secondary text-on-secondary"
       : daemonStatus.state === "Unresponsive"
         ? "bg-error text-on-error"
-        : "bg-surface-container-lowest text-ink";
+        : "bg-surface-container-lowest text-text";
+  const surfaces = ["surface", "surfaceContainerLowest", "surfaceVariant"] as const;
+  const hasLowTextContrast = surfaces.some((surface) => contrastRatio(colors.text, colors[surface]) < 4.5);
+  const hasLowBorderContrast = surfaces.some((surface) => contrastRatio(colors.border, colors[surface]) < 3);
+  const hasLowCardBorderContrast = contrastRatio(colors.cardBorder, colors.surfaceContainerLowest) < 3;
 
   return (
-    <div className="w-full flex-1 overflow-y-auto pr-2 pb-2">
-      <div className="mb-4 flex items-center gap-3 border-b-[4px] border-ink pb-3">
-        <button type="button" className="btn bg-surface-container-lowest text-ink" onClick={onBack}>
+    <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+      <div className="mb-4 flex shrink-0 items-center gap-3 border-b-[4px] border-ink pb-3">
+        <button type="button" className="btn bg-surface-container-lowest text-text" onClick={onBack}>
           <IconArrowLeft />
           Back
         </button>
@@ -112,15 +184,16 @@ export function SettingsPage({
           Settings
         </h1>
       </div>
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,648px)_minmax(320px,1fr)]">
-        <div className="card flex min-w-0 flex-col gap-5 p-5">
-          <div className="-mx-5 -mt-5 mb-1 flex h-8 shrink-0 items-center gap-1.5 border-b-[4px] border-ink bg-ink px-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto pr-2 pb-2 xl:grid xl:grid-cols-[minmax(0,648px)_minmax(320px,1fr)] xl:grid-rows-1 xl:overflow-hidden xl:pr-0">
+        <section className="card flex min-h-0 min-w-0 flex-col gap-5 p-5" aria-labelledby="appearance-heading">
+          <div className="-mx-5 -mt-5 mb-1 flex h-8 shrink-0 items-center gap-1.5 border-b-[4px] border-card-border bg-card-header px-4">
             <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-error" />
             <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-secondary" />
             <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-tertiary" />
           </div>
-          <section className="flex flex-col gap-3">
-            <h2 className="m-0 inline-block w-fit border-b-2 border-ink pb-1.5 font-display text-xl font-bold uppercase">
+          <div data-testid="appearance-scroll" className="min-h-0 flex-1 overflow-y-auto pr-2">
+            <div className="flex flex-col gap-3">
+            <h2 id="appearance-heading" className="m-0 inline-block w-fit border-b-2 border-ink pb-1.5 font-display text-xl font-bold uppercase">
               Appearance
             </h2>
             <p className="m-0 font-mono text-sm text-on-surface-variant">
@@ -129,8 +202,21 @@ export function SettingsPage({
             </p>
             <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
               <legend className="font-mono text-sm uppercase">Color theme</legend>
+              <div className="flex flex-wrap gap-2">
+                {(["all", "light", "dark"] as ThemeFilter[]).map((filter) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    aria-pressed={themeFilter === filter}
+                    className={`btn px-3 py-1 text-xs ${themeFilter === filter ? "" : "bg-surface-container-lowest text-text"}`}
+                    onClick={() => setThemeFilter(filter)}
+                  >
+                    {filter}
+                  </button>
+                ))}
+              </div>
               <div className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3">
-                {THEMES.map((theme) => {
+                {THEMES.filter((theme) => themeFilter === "all" || theme.mode === themeFilter).map((theme) => {
                   const selected = theme.id === currentTheme;
                   return (
                     <button
@@ -141,7 +227,7 @@ export function SettingsPage({
                       onClick={() => onSelectTheme(theme.id)}
                       className={`flex cursor-pointer flex-col gap-3 border-ink bg-surface-container-lowest p-3 text-left ${
                         selected
-                          ? "border-[4px] shadow-[4px_4px_0_var(--color-ink)]"
+                          ? "border-[4px] shadow-[4px_4px_0_var(--color-hard-shadow)]"
                           : "border-[3px] shadow-none"
                       }`}
                     >
@@ -159,11 +245,18 @@ export function SettingsPage({
                             className="h-6 w-6 border-2 border-ink"
                             style={{ backgroundColor: theme.colors.tertiary }}
                           />
+                          <span
+                            className="h-6 w-6 border-2 border-ink"
+                            style={{ backgroundColor: theme.colors.terminalHeader }}
+                          />
                         </div>
                         {selected && <IconCheck />}
                       </div>
                       <span className="font-mono text-xs font-bold tracking-wide uppercase">
                         {theme.label}
+                      </span>
+                      <span className="font-mono text-[0.625rem] text-on-surface-variant uppercase">
+                        {theme.mode}
                       </span>
                     </button>
                   );
@@ -171,29 +264,27 @@ export function SettingsPage({
               </div>
             </fieldset>
             <div className="flex flex-col gap-3 border-t-2 border-ink pt-4">
-              <h3 className="m-0 font-mono text-sm font-bold uppercase">Surface colors</h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="flex items-center justify-between gap-3 border-2 border-ink bg-surface-container-lowest p-3 font-mono text-xs font-bold uppercase">
-                  Terminal background
-                  <input
-                    type="color"
-                    aria-label="Terminal background color"
-                    value={terminalBackground}
-                    onChange={(event) => onTerminalBackgroundChange(event.target.value)}
-                    className="h-8 w-12 cursor-pointer border-2 border-ink bg-transparent p-0"
-                  />
-                </label>
-                <label className="flex items-center justify-between gap-3 border-2 border-ink bg-surface-container-lowest p-3 font-mono text-xs font-bold uppercase">
-                  Application background
-                  <input
-                    type="color"
-                    aria-label="Application background color"
-                    value={appBackground}
-                    onChange={(event) => onAppBackgroundChange(event.target.value)}
-                    className="h-8 w-12 cursor-pointer border-2 border-ink bg-transparent p-0"
-                  />
-                </label>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="m-0 font-mono text-sm font-bold uppercase">UI colors</h3>
+                  <p className="m-0 font-mono text-xs text-on-surface-variant">
+                    Edit the active palette. Reset restores {THEMES.find((theme) => theme.id === currentTheme)?.label}.
+                  </p>
+                </div>
+                <button type="button" className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-text" onClick={onResetThemeColors}>
+                  Reset palette
+                </button>
               </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {UI_COLOR_ROLES.map((role) => (
+                  <ColorControl key={role.key} label={role.label} value={colors[role.key]} onChange={(value) => updateColor(role.key, value)} />
+                ))}
+              </div>
+              {(hasLowTextContrast || hasLowBorderContrast || hasLowCardBorderContrast) && (
+                <p className="m-0 border-2 border-ink bg-warning px-3 py-2 font-mono text-xs font-bold text-text">
+                  Low contrast: primary text needs 4.5:1; borders and card borders need 3:1 contrast.
+                </p>
+              )}
             </div>
             <fieldset className="m-0 flex flex-col gap-2 border-t-2 border-ink pt-4">
               <legend className="font-mono text-sm font-bold uppercase">Background pattern</legend>
@@ -205,14 +296,39 @@ export function SettingsPage({
                     aria-pressed={pattern.id === backgroundPattern}
                     aria-label={pattern.label}
                     onClick={() => onBackgroundPatternChange(pattern.id)}
-                    className={`flex h-16 items-end border-ink p-2 font-mono text-[0.6875rem] font-bold uppercase cursor-pointer ${pattern.id === backgroundPattern ? "border-[4px] shadow-[4px_4px_0_var(--color-ink)]" : "border-[3px] shadow-none"}`}
-                    style={{ backgroundColor: appBackground, backgroundImage: pattern.image, backgroundSize: pattern.size }}
+                    className={`flex h-16 items-end border-ink p-2 font-mono text-[0.6875rem] font-bold uppercase cursor-pointer ${pattern.id === backgroundPattern ? "border-[4px] shadow-[4px_4px_0_var(--color-hard-shadow)]" : "border-[3px] shadow-none"}`}
+                    style={{ backgroundColor: colors.appBackground, backgroundImage: pattern.image, backgroundSize: pattern.size }}
                   >
                     <span className="border-2 border-ink bg-surface-container-lowest px-1.5 py-1">{pattern.label}</span>
                   </button>
                 ))}
               </div>
             </fieldset>
+            <section className="flex flex-col gap-3 border-t-2 border-ink pt-4" aria-labelledby="terminal-colors-heading">
+              <h3 id="terminal-colors-heading" className="m-0 font-mono text-sm font-bold uppercase">
+                Terminal colors
+              </h3>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {TERMINAL_COLOR_ROLES.map((role) => (
+                  <ColorControl key={role.key} label={role.label} value={colors[role.key]} onChange={(value) => updateColor(role.key, value)} />
+                ))}
+              </div>
+              <details className="border-2 border-ink bg-surface-container-lowest p-3">
+                <summary className="cursor-pointer font-mono text-xs font-bold uppercase">
+                  ANSI terminal palette
+                </summary>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {(Object.keys(colors.ansi) as Array<keyof ThemeColors["ansi"]>).map((key) => (
+                    <ColorControl
+                      key={key}
+                      label={key.replace(/([A-Z])/g, " $1")}
+                      value={colors.ansi[key]}
+                      onChange={(value) => updateAnsiColor(key, value)}
+                    />
+                  ))}
+                </div>
+              </details>
+            </section>
             <div className="flex flex-col gap-3 border-t-2 border-ink pt-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -226,22 +342,23 @@ export function SettingsPage({
                   role="switch"
                   aria-checked={crtFilterEnabled}
                   aria-label="CRT filter"
-                  className={`btn px-3 py-1.5 text-xs ${crtFilterEnabled ? "bg-secondary text-on-secondary" : "bg-surface-container-lowest text-ink"}`}
+                  className={`btn px-3 py-1.5 text-xs ${crtFilterEnabled ? "bg-secondary text-on-secondary" : "bg-surface-container-lowest text-text"}`}
                   onClick={() => onCrtFilterChange(!crtFilterEnabled)}
                 >
                   {crtFilterEnabled ? "On" : "Off"}
                 </button>
               </div>
-              <div className="relative overflow-hidden border-2 border-ink bg-black p-3 font-mono text-xs text-secondary">
+              <div className="relative overflow-hidden border-2 border-ink bg-terminal-idle p-3 font-mono text-xs text-secondary">
                 <span>$ ready_</span>
                 {crtFilterEnabled && <div className="scanlines pointer-events-none absolute inset-0" aria-hidden="true" />}
               </div>
             </div>
-          </section>
-        </div>
-        <aside className="flex min-w-0 flex-col gap-5">
+            </div>
+          </div>
+        </section>
+        <aside className="flex min-h-0 min-w-0 flex-col gap-5 xl:overflow-y-auto xl:pr-2">
           <section className="card flex flex-col gap-3 p-5" aria-labelledby="daemon-heading">
-            <div className="-mx-5 -mt-5 mb-1 flex h-8 shrink-0 items-center gap-1.5 border-b-[4px] border-ink bg-ink px-4">
+            <div className="-mx-5 -mt-5 mb-1 flex h-8 shrink-0 items-center gap-1.5 border-b-[4px] border-card-border bg-card-header px-4">
               <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-error" />
               <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-secondary" />
               <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-tertiary" />
@@ -272,10 +389,10 @@ export function SettingsPage({
               <button type="button" className="btn px-3 py-1.5 text-xs" disabled={daemonBusy || daemonStatus.state === "Running"} onClick={() => void runDaemonAction("start")}>
                 Start daemon
               </button>
-              <button type="button" className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-ink" disabled={daemonBusy || daemonStatus.state !== "Running"} onClick={() => setPendingDaemonAction("restart")}>
+              <button type="button" className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-text" disabled={daemonBusy || daemonStatus.state !== "Running"} onClick={() => setPendingDaemonAction("restart")}>
                 Restart daemon
               </button>
-              <button type="button" className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-ink" disabled={daemonBusy || daemonStatus.state !== "Running"} onClick={() => setPendingDaemonAction("stop")}>
+              <button type="button" className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-text" disabled={daemonBusy || daemonStatus.state !== "Running"} onClick={() => setPendingDaemonAction("stop")}>
                 Stop daemon
               </button>
               <button type="button" className="btn bg-error px-3 py-1.5 text-xs text-on-error" disabled={daemonBusy || daemonStatus.state === "Stopped"} onClick={() => setPendingDaemonAction("force")}>
@@ -292,16 +409,16 @@ export function SettingsPage({
                       : "Stop ends every running Terminal process for this session. Saved tabs and configuration remain."}
                 </p>
                 <div className="flex gap-2">
-                  <button type="button" className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-ink" disabled={daemonBusy} onClick={() => void runDaemonAction(pendingDaemonAction)}>
+                  <button type="button" className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-text" disabled={daemonBusy} onClick={() => void runDaemonAction(pendingDaemonAction)}>
                     {daemonBusy ? "Working…" : "Confirm"}
                   </button>
-                  <button type="button" className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-ink" disabled={daemonBusy} onClick={() => setPendingDaemonAction(null)}>
+                  <button type="button" className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-text" disabled={daemonBusy} onClick={() => setPendingDaemonAction(null)}>
                     Cancel
                   </button>
                 </div>
               </div>
             )}
-            <div className="flex flex-col gap-2 border-2 border-ink bg-ink p-3 text-secondary">
+            <div className="flex flex-col gap-2 border-2 border-ink bg-terminal-idle p-3 text-secondary">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h3 className="m-0 font-mono text-xs font-bold uppercase">Persistent daemon log</h3>
                 <button type="button" className="btn bg-secondary px-3 py-1.5 text-xs text-on-secondary" disabled={daemonBusy} onClick={() => void onRefreshDaemon()}>
@@ -310,13 +427,13 @@ export function SettingsPage({
               </div>
               <p className="m-0 break-all font-mono text-[0.6875rem] text-secondary">{daemonLogs.path || daemonStatus.log_path}</p>
               {daemonLogs.truncated && <p className="m-0 font-mono text-[0.6875rem] font-bold uppercase text-tertiary">Showing the latest log tail.</p>}
-              <pre className="m-0 max-h-56 overflow-auto whitespace-pre-wrap border-2 border-secondary bg-black p-3 font-mono text-xs text-secondary">
+            <pre className="m-0 max-h-56 overflow-auto whitespace-pre-wrap border-2 border-secondary bg-terminal-idle p-3 font-mono text-xs text-secondary">
                 {daemonLogs.content || "No daemon log entries yet."}
               </pre>
             </div>
           </section>
           <section className="card flex flex-col gap-3 p-5">
-            <div className="-mx-5 -mt-5 mb-1 flex h-8 shrink-0 items-center gap-1.5 border-b-[4px] border-ink bg-ink px-4">
+            <div className="-mx-5 -mt-5 mb-1 flex h-8 shrink-0 items-center gap-1.5 border-b-[4px] border-card-border bg-card-header px-4">
               <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-error" />
               <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-secondary" />
               <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-tertiary" />
@@ -344,7 +461,7 @@ export function SettingsPage({
               </button>
               <button
                 type="button"
-                className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-ink"
+                className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-text"
                 onClick={() => void handleChooseImport()}
               >
                 <IconUpload />
@@ -360,7 +477,7 @@ export function SettingsPage({
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-ink"
+                    className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-text"
                     onClick={() => {
                       onImport(pendingImportPath);
                       setPendingImportPath(null);
@@ -371,7 +488,7 @@ export function SettingsPage({
                   </button>
                   <button
                     type="button"
-                    className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-ink"
+                    className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-text"
                     onClick={() => setPendingImportPath(null)}
                   >
                     <IconX />

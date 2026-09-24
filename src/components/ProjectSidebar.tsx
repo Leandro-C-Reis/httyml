@@ -17,9 +17,9 @@ type ProjectSidebarProps = {
 // shadow grows to 6px as the item nudges up-left, then collapses as it
 // presses down-right.
 const projectItemBase =
-  "w-full cursor-pointer rounded-none border-[3px] px-2 py-1.5 text-left font-mono transition-[transform,box-shadow] duration-100 border-ink shadow-[4px_4px_0_var(--color-ink)] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_var(--color-ink)] active:translate-x-1 active:translate-y-1 active:shadow-none";
-const projectItemInactive = "bg-transparent text-ink hover:bg-surface-variant";
-const projectItemSelected = "bg-secondary text-on-secondary";
+  "w-full cursor-pointer rounded-none border-[3px] px-2 py-1.5 text-left font-mono transition-[transform,box-shadow] duration-100  shadow-[4px_4px_0_var(--color-hard-shadow)] hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_var(--color-hard-shadow)] active:translate-x-1 active:translate-y-1 active:shadow-none";
+const projectItemInactive = "bg-transparent text-text hover:bg-surface-variant border-ink";
+const projectItemSelected = "border-primary shadow-[4px_4px_0_var(--color-primary)]";
 
 const COLLAPSED_KEY = "httyml.sidebarCollapsed";
 

@@ -89,7 +89,7 @@ export function ConfigureTerminalPage({
         aria-label={isEdit ? "Edit terminal" : "Create terminal"}
         className="card relative flex flex-col gap-5 p-5 pt-0"
       >
-        <div className="-mx-5 mb-1 flex h-8 shrink-0 items-center gap-1.5 border-b-[4px] border-ink bg-ink px-4">
+        <div className="-mx-5 mb-1 flex h-8 shrink-0 items-center gap-1.5 border-b-[4px] border-card-border bg-card-header px-4">
           <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-error" />
           <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-secondary" />
           <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-tertiary" />
@@ -171,7 +171,7 @@ export function ConfigureTerminalPage({
           </label>
         </details>
         <div className="flex justify-end gap-3 border-t-[4px] border-ink pt-4">
-          <button type="button" className="btn bg-surface-container-lowest text-ink" onClick={onCancel}>
+          <button type="button" className="btn bg-surface-container-lowest text-text" onClick={onCancel}>
             <IconX />
             Cancel
           </button>

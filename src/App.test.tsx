@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import App from "./App";
 import * as daemon from "./lib/daemon";
 import * as dialog from "./lib/dialog";
+import { THEMES } from "./lib/theme";
 
 vi.mock("./lib/dialog", () => ({
   pickExportPath: vi.fn(),
@@ -222,13 +223,18 @@ describe("App", () => {
 
     expect(dialog.pickExportPath).toHaveBeenCalledWith("httyml-backup.json");
     await waitFor(() =>
-      expect(daemon.exportConfig).toHaveBeenCalledWith("/tmp/httyml-backup.json", {
+      expect(daemon.exportConfig).toHaveBeenCalledWith("/tmp/httyml-backup.json", expect.objectContaining({
         theme: "nightshade",
         terminal_background: "#050505",
         app_background: "#eeeeee",
         background_pattern: "horizontal-stripes",
         crt_filter_enabled: true,
-      }),
+        appearance: expect.objectContaining({
+          version: 4,
+          theme: "nightshade",
+          colors: expect.objectContaining({ terminalBackground: "#050505" }),
+        }),
+      })),
     );
     expect(await screen.findByText(/exported to \/tmp\/httyml-backup\.json/i)).toBeInTheDocument();
   });
@@ -236,10 +242,27 @@ describe("App", () => {
   it("imports a config via the native open dialog, replacing the Project list and returning to the dashboard state", async () => {
     vi.mocked(daemon.listProjects).mockResolvedValue([project("p1", "Old Project")]);
     vi.mocked(dialog.pickImportPath).mockResolvedValue("/tmp/httyml-backup.json");
+    const forest = THEMES.find((theme) => theme.id === "forest")!.colors;
+    const {
+      border: _border,
+      text: _text,
+      shadow: _shadow,
+      cardHeader: _cardHeader,
+      cardBorder: _cardBorder,
+      ...v2Colors
+    } = forest;
     vi.mocked(daemon.importConfig).mockResolvedValue({
       projects: [project("p2", "Imported Project")],
       terminal_count: 3,
-      extra: { theme: "forest" },
+      extra: {
+        theme: "forest",
+        appearance: {
+          version: 2,
+          theme: "forest",
+          colors: { ...v2Colors, ink: "#13579b" },
+          backgroundPattern: "grid",
+        },
+      },
     });
     render(<App />);
     await screen.findByRole("button", { name: /open project/i });
@@ -253,6 +276,11 @@ describe("App", () => {
     expect(await screen.findByText(/imported 1 project and 3 terminals/i)).toBeInTheDocument();
     // The imported theme applied too.
     expect(localStorage.getItem("httyml.theme")).toBe("forest");
+    expect(document.documentElement.style.getPropertyValue("--color-border")).toBe("#13579b");
+    expect(document.documentElement.style.getPropertyValue("--color-text")).toBe("#13579b");
+    expect(document.documentElement.style.getPropertyValue("--color-hard-shadow")).toBe("#13579b");
+    expect(document.documentElement.style.getPropertyValue("--color-card-header")).toBe("#13579b");
+    expect(document.documentElement.style.getPropertyValue("--color-card-border")).toBe("#13579b");
 
     await userEvent.click(screen.getByRole("button", { name: /back/i }));
     expect(screen.getAllByText("Imported Project").length).toBeGreaterThan(0);

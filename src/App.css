@@ -23,11 +23,16 @@
   --color-primary-fixed: #e1dfff;
   --color-tertiary-fixed: #ffd9e3;
 
-  /* The one border/text/shadow color, fixed regardless of surface — see the
-     "Ink" note in DESIGN.md. Never make this theme-dependent: fixed-color
-     fills (button backgrounds, card surfaces) rely on a foreground that
-     never flips underneath them. */
+  /* Independent outline, foreground, and hard-shadow roles keep dark palettes
+     readable while preserving the sharp neo-brutalist treatment. */
+  --color-border: #1b1b1b;
+  --color-text: #1b1b1b;
+  --color-card-header: #1b1b1b;
+  --color-card-border: #1b1b1b;
+  --color-hard-shadow: #1b1b1b;
   --color-ink: #1b1b1b;
+  --color-terminal-header: #e2e2e2;
+  --color-terminal-idle: #3f3f46;
 
   --font-display: "Space Grotesk", sans-serif;
   --font-sans: Inter, Avenir, Helvetica, Arial, sans-serif;
@@ -46,7 +51,7 @@
   }
 
   body {
-    @apply text-ink font-sans antialiased;
+    @apply text-text font-sans antialiased;
     background-color: var(--app-background, var(--color-surface));
   }
 }
@@ -58,27 +63,27 @@
    components. */
 @layer components {
   .btn {
-    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-none border-[3px] border-ink bg-primary px-5 py-2.5 font-mono text-sm font-bold tracking-wide text-on-primary uppercase shadow-[4px_4px_0_var(--color-ink)] transition-[transform,box-shadow] duration-100;
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-none border-[3px] border-ink bg-primary px-5 py-2.5 font-mono text-sm font-bold tracking-wide text-on-primary uppercase shadow-[4px_4px_0_var(--color-hard-shadow)] transition-[transform,box-shadow] duration-100;
   }
   .btn:disabled {
     @apply cursor-not-allowed opacity-50 shadow-none;
   }
   .btn:enabled:hover {
-    @apply -translate-x-0.5 -translate-y-0.5 shadow-[6px_6px_0_var(--color-ink)];
+    @apply -translate-x-0.5 -translate-y-0.5 shadow-[6px_6px_0_var(--color-hard-shadow)];
   }
   .btn:enabled:active {
     @apply translate-x-1 translate-y-1 shadow-none;
   }
 
   .field {
-    @apply rounded-none border-2 border-ink bg-surface-container-lowest px-3 py-2 font-mono text-base text-ink outline-none;
+    @apply rounded-none border-2 border-ink bg-surface-container-lowest px-3 py-2 font-mono text-base text-text outline-none;
   }
   .field:focus-visible {
     @apply border-primary shadow-[4px_4px_0_var(--color-primary)] outline-2 outline-ink outline-offset-2;
   }
 
   .card {
-    @apply border-[4px] border-ink bg-surface-container-lowest text-ink shadow-[8px_8px_0_var(--color-ink)];
+    @apply border-[4px] border-card-border bg-surface-container-lowest text-text shadow-[8px_8px_0_var(--color-hard-shadow)];
   }
 
   .status-chip {
@@ -92,7 +97,7 @@
      flush with the shell, like a divider tab pulled forward out of a stack
      of cards. */
   .tab {
-    @apply relative top-1 border-2 border-ink bg-surface-container-lowest px-4 pt-2 pb-1.5 font-mono text-sm font-bold tracking-wide text-ink uppercase transition-colors duration-100 cursor-pointer
+    @apply relative top-1 border-2 border-ink bg-surface-container-lowest px-4 pt-2 pb-1.5 font-mono text-sm font-bold tracking-wide text-text uppercase transition-colors duration-100 cursor-pointer
     flex items-center gap-1.5;
   }
   .tab:hover {
@@ -100,7 +105,15 @@
   }
   .tab--active,
   .tab--active:hover {
-    @apply z-10 border-[3px] bg-secondary  text-on-secondary shadow-[3px_3px_0_var(--color-ink)];
+    @apply z-10 border-[3px] bg-secondary text-on-secondary shadow-[3px_3px_0_var(--color-hard-shadow)];
+  }
+  .tab--running,
+  .tab--running:hover {
+    @apply border-primary;
+  }
+  .tab--active-running,
+  .tab--active-running:hover {
+    @apply shadow-[3px_3px_0_var(--color-primary)];
   }
 
   /* A restrained nod to a CRT over the live shell output — the two-layer
@@ -111,4 +124,20 @@
       linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
     background-size: 100% 4px, 6px 100%;
   }
+
+  /* Chrome color swatch adjustments */
+  input[type="color"]::-webkit-color-swatch {
+    padding: 0;
+    margin: -6px;
+  }
+}
+
+/* Existing utilities retain their markup while resolving to the dedicated
+   theme roles. The ink token remains the hard-shadow color and also supports
+   the few intentional ink fills used as terminal-like chrome. */
+@layer utilities {
+  .border-ink {
+    border-color: var(--color-border);
+  }
+
 }

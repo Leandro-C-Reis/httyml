@@ -38,8 +38,12 @@ import { IconArrowLeft, IconEdit, IconPlus, IconSettings } from "./components/ic
 import { projectColor, projectIcon } from "./components/projectStyle";
 import {
   applyAppearance,
+  appearanceForTheme,
   BACKGROUND_PATTERNS,
+  normalizeThemeColors,
   readAppearance,
+  resetThemeColors,
+  terminalTheme,
   THEMES,
   writeAppearance,
   type AppearancePreferences,
@@ -429,7 +433,11 @@ function App() {
   }
 
   function handleSelectTheme(theme: AppearancePreferences["theme"]) {
-    updateAppearance({ theme });
+    updateAppearance(appearanceForTheme(theme, appearance.backgroundPattern));
+  }
+
+  function handleColorsChange(colors: AppearancePreferences["colors"]) {
+    updateAppearance({ colors });
   }
 
   function handleCrtFilterChange(enabled: boolean) {
@@ -441,9 +449,10 @@ function App() {
     setConfigStatus(null);
     await exportConfig(path, {
       theme: appearance.theme,
-      terminal_background: appearance.terminalBackground,
-      app_background: appearance.appBackground,
+      terminal_background: appearance.colors.terminalBackground,
+      app_background: appearance.colors.appBackground,
       background_pattern: appearance.backgroundPattern,
+      appearance: { version: 4, ...appearance },
       crt_filter_enabled: crtFilterEnabled,
     });
     setConfigStatus(`Exported to ${path}.`);
@@ -467,25 +476,46 @@ function App() {
     const importedPattern = result.extra.background_pattern;
     const importedTerminalBackground = result.extra.terminal_background;
     const importedAppBackground = result.extra.app_background;
-    const nextAppearance: AppearancePreferences = {
-      ...appearance,
-      theme:
-        typeof importedTheme === "string" && THEMES.some((t) => t.id === importedTheme)
-          ? (importedTheme as AppearancePreferences["theme"])
-          : appearance.theme,
-      terminalBackground:
-        typeof importedTerminalBackground === "string" && /^#[0-9a-f]{6}$/i.test(importedTerminalBackground)
-          ? importedTerminalBackground
-          : appearance.terminalBackground,
-      appBackground:
-        typeof importedAppBackground === "string" && /^#[0-9a-f]{6}$/i.test(importedAppBackground)
-          ? importedAppBackground
-          : appearance.appBackground,
-      backgroundPattern:
-        typeof importedPattern === "string" && BACKGROUND_PATTERNS.some((pattern) => pattern.id === importedPattern)
-          ? (importedPattern as BackgroundPatternId)
-          : appearance.backgroundPattern,
-    };
+    const importedAppearance = result.extra.appearance;
+    const importedColors =
+      importedAppearance && typeof importedAppearance === "object"
+        ? normalizeThemeColors((importedAppearance as Record<string, unknown>).colors)
+        : null;
+    const validTheme = (value: unknown): value is AppearancePreferences["theme"] =>
+      typeof value === "string" && THEMES.some((theme) => theme.id === value);
+    const validPattern = (value: unknown): value is BackgroundPatternId =>
+      typeof value === "string" && BACKGROUND_PATTERNS.some((pattern) => pattern.id === value);
+    let nextAppearance = appearance;
+    if (
+      importedAppearance &&
+      typeof importedAppearance === "object" &&
+      validTheme((importedAppearance as Record<string, unknown>).theme) &&
+      importedColors &&
+      validPattern((importedAppearance as Record<string, unknown>).backgroundPattern)
+    ) {
+      const imported = importedAppearance as AppearancePreferences;
+      nextAppearance = {
+        theme: imported.theme,
+        colors: importedColors,
+        backgroundPattern: imported.backgroundPattern,
+      };
+    } else {
+      nextAppearance = appearanceForTheme(
+        validTheme(importedTheme) ? importedTheme : appearance.theme,
+        validPattern(importedPattern) ? importedPattern : appearance.backgroundPattern,
+      );
+      nextAppearance.colors = {
+        ...nextAppearance.colors,
+        terminalBackground:
+          typeof importedTerminalBackground === "string" && /^#[0-9a-f]{6}$/i.test(importedTerminalBackground)
+            ? importedTerminalBackground
+            : nextAppearance.colors.terminalBackground,
+        appBackground:
+          typeof importedAppBackground === "string" && /^#[0-9a-f]{6}$/i.test(importedAppBackground)
+            ? importedAppBackground
+            : nextAppearance.colors.appBackground,
+      };
+    }
     applyAppearance(nextAppearance);
     writeAppearance(nextAppearance);
     setAppearance(nextAppearance);
@@ -750,7 +780,7 @@ function App() {
         <main
           className="box-border flex min-h-0 flex-1 flex-col p-6"
           style={{
-            backgroundColor: appearance.appBackground,
+            backgroundColor: appearance.colors.appBackground,
             backgroundImage:
               BACKGROUND_PATTERNS.find((pattern) => pattern.id === appearance.backgroundPattern)?.image,
             backgroundSize:
@@ -761,11 +791,10 @@ function App() {
           <SettingsPage
             currentTheme={appearance.theme}
             onSelectTheme={handleSelectTheme}
-            terminalBackground={appearance.terminalBackground}
-            appBackground={appearance.appBackground}
+            colors={appearance.colors}
             backgroundPattern={appearance.backgroundPattern}
-            onTerminalBackgroundChange={(color) => updateAppearance({ terminalBackground: color })}
-            onAppBackgroundChange={(color) => updateAppearance({ appBackground: color })}
+            onColorsChange={handleColorsChange}
+            onResetThemeColors={() => updateAppearance(resetThemeColors(appearance))}
             onBackgroundPatternChange={(pattern) => updateAppearance({ backgroundPattern: pattern })}
             crtFilterEnabled={crtFilterEnabled}
             onCrtFilterChange={handleCrtFilterChange}
@@ -841,11 +870,11 @@ function App() {
             <div className="mb-2 flex flex-wrap items-center gap-3">
               <button
                 type="button"
-                className="btn bg-surface-container-lowest text-ink"
+                className="btn bg-surface-container-lowest text-text gap-2"
                 onClick={handleGoHome}
               >
                 <IconArrowLeft />
-                Active Projects
+                Projects
               </button>
               {selectedProject && (() => {
                 const color = projectColor(selectedProject.color);
@@ -853,8 +882,8 @@ function App() {
                 return (
                   <span
                     aria-label={`${selectedProject.name} project color`}
-                    className="flex h-10 w-10 shrink-0 items-center justify-center border-[3px] border-ink shadow-[3px_3px_0_var(--color-ink)]"
-                    style={color.swatch}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center border-[3px] border-ink bg-surface-container-lowest shadow-[3px_3px_0_var(--color-ink)]"
+                    style={{color: color.hex}}
                   >
                     <Icon />
                   </span>
@@ -865,7 +894,7 @@ function App() {
               </h2>
               <button
                 type="button"
-                className="btn ml-auto bg-surface-container-lowest text-ink"
+                className="btn ml-auto bg-surface-container-lowest text-text"
                 onClick={() => setShowSettings(true)}
               >
                 <IconSettings />
@@ -873,7 +902,7 @@ function App() {
               </button>
               <button
                 type="button"
-                className="btn bg-surface-container-lowest text-ink"
+                className="btn bg-surface-container-lowest text-text"
                 onClick={() => setEditingProjectId(selectedProjectId)}
               >
                 <IconEdit />
@@ -922,7 +951,7 @@ function App() {
                           void runAction(() => handleSetProjectScripts(scripts))
                         }
                         crtFilterEnabled={crtFilterEnabled}
-                        terminalBackgroundColor={appearance.terminalBackground}
+                        terminalTheme={terminalTheme(appearance.colors)}
                         onError={setError}
                       />
                     </div>

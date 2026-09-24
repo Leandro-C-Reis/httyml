@@ -14,6 +14,21 @@ export function TerminalTabBar({ terminals, activeTerminalId, onSelect, onAdd }:
       {terminals.map((terminal) => {
         const label = terminal.name ?? terminal.id.slice(0, 8);
         const isActive = terminal.id === activeTerminalId;
+        const isRunning = terminal.state == 'Running';
+        let className = 'tab';
+
+        if (isActive) {
+          className += ' tab--active';
+        }
+        
+        if (isRunning) {
+          className += ' tab--running';
+        }
+
+        if (isActive && isRunning) {
+          className += ' tab--active-running';
+        } 
+        
         return (
           <button
             key={terminal.id}
@@ -21,7 +36,7 @@ export function TerminalTabBar({ terminals, activeTerminalId, onSelect, onAdd }:
             role="tab"
             aria-selected={isActive}
             aria-label={label}
-            className={isActive ? "tab tab--active" : "tab"}
+            className={className}
             onClick={() => onSelect(terminal.id)}
           >
             <IconTerminal/>

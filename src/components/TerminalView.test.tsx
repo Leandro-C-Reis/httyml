@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { TerminalView } from "./TerminalView";
 import * as daemon from "../lib/daemon";
+import { terminalTheme, THEMES } from "../lib/theme";
 
 const mockWrite = vi.fn();
 const mockOpen = vi.fn();
@@ -88,7 +89,7 @@ function renderTerminalView(overrides: Partial<Parameters<typeof TerminalView>[0
       scripts={[]}
       onScriptsChange={vi.fn()}
       crtFilterEnabled
-      terminalBackgroundColor="#050505"
+      terminalTheme={terminalTheme(THEMES[0].colors)}
       onEdit={onEdit}
       onDelete={onDelete}
       tabs={[

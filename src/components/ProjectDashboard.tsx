@@ -57,7 +57,7 @@ export function ProjectDashboard({
           {projects.length > 1 && (
             <button
               type="button"
-              className="btn bg-surface-container-lowest text-ink"
+              className="btn bg-surface-container-lowest text-text"
               aria-pressed={reordering}
               onClick={() => setReordering((prev) => !prev)}
             >
@@ -68,7 +68,7 @@ export function ProjectDashboard({
             type="button"
             aria-label="Settings"
             title="Settings"
-            className="btn bg-surface-container-lowest text-ink"
+            className="btn bg-surface-container-lowest text-text"
             onClick={onOpenSettings}
           >
             <IconSettings />
@@ -95,7 +95,7 @@ export function ProjectDashboard({
                     ? "outline-3 outline-dashed outline-offset-2 outline-ink"
                     : ""
                 }`}
-                style={color.tint}
+                style={{backgroundColor: color.hex}}
                 draggable={reordering}
                 onDragStart={(e) => {
                   setDraggedId(project.id);
@@ -135,7 +135,7 @@ export function ProjectDashboard({
                 }}
               >
                 <div
-                  className={`flex items-center gap-1.5 border-b-[4px] border-ink px-3 py-2.5 bg-ink`}
+                  className="flex items-center gap-1.5 border-b-[4px] border-card-border bg-card-header px-3 py-2.5"
                 >
                   <span className="h-2.5 w-2.5 rounded-full bg-error" />
                   <span className="h-2.5 w-2.5 rounded-full bg-secondary" />
@@ -146,14 +146,13 @@ export function ProjectDashboard({
                 </div>
                 <div className="flex flex-1 flex-col gap-4 p-4">
                   <h2 className="m-0 flex items-center gap-2 font-display text-2xl font-bold tracking-tight uppercase">
-                    {project.name}
-                    <div className="ml-auto bg-white p-2 border-2 border-ink shadow-[3px_3px_0_var(--color-ink)]" >
-
+                    <span style={{ color: color.readableOn }}>{project.name}</span>
+                    <div className="ml-auto border-2 border-ink bg-surface-container-lowest p-2 shadow-[3px_3px_0_var(--color-hard-shadow)]" >
                       <Icon />
                     </div>
                   </h2>
                   {project.description && (
-                    <p className="m-0 font-mono text-sm text-on-surface-variant">
+                    <p className="m-0 font-mono text-sm text-on-surface-variant" style={{ color: color.readableOn }}>
                       {project.description}
                     </p>
                   )}
@@ -169,7 +168,7 @@ export function ProjectDashboard({
                     <div className="mt-auto flex gap-2 flex-col">
                       <button
                         type="button"
-                        className="btn bg-surface-container-lowest text-ink"
+                        className="btn bg-surface-container-lowest text-text"
                         aria-label={`Edit ${project.name}`}
                         onClick={() => onEdit(project.id)}
                       >

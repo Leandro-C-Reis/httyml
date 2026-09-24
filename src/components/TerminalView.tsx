@@ -23,6 +23,7 @@ import { IconEdit, IconFolder, IconPlay, IconStop, IconTrash } from "./icons";
 import { TerminalTabBar } from "./TerminalTabBar";
 import { ShortcutGuide } from "./ShortcutGuide";
 import { TerminalSideMenu } from "./TerminalSideMenu";
+import type { TerminalTheme } from "../lib/theme";
 
 type TerminalViewProps = {
   terminalId: string;
@@ -42,7 +43,7 @@ type TerminalViewProps = {
   onScriptsChange: (scripts: ProjectScript[]) => void;
   /// Whether to paint the visual CRT filter over terminal output.
   crtFilterEnabled: boolean;
-  terminalBackgroundColor: string;
+  terminalTheme: TerminalTheme;
   // Surfaces a failure that isn't tied to a discrete click the App-level
   // `runAction` wrapper could catch: attach happens inside this
   // component's own mount effect, and a failed Stop/Start shouldn't just
@@ -88,7 +89,7 @@ export function TerminalView({
   scripts,
   onScriptsChange,
   crtFilterEnabled,
-  terminalBackgroundColor,
+  terminalTheme,
   onError,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -100,7 +101,7 @@ export function TerminalView({
   const [state, setState] = useState<TerminalState>("Running");
 
   useEffect(() => {
-    const term = new Terminal({ theme: { background: terminalBackgroundColor } });
+    const term = new Terminal({ theme: terminalTheme });
     termRef.current = term;
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
@@ -202,9 +203,9 @@ export function TerminalView({
   useEffect(() => {
     const term = termRef.current;
     if (term?.options) {
-      term.options.theme = { ...term.options.theme, background: terminalBackgroundColor };
+      term.options.theme = terminalTheme;
     }
-  }, [terminalBackgroundColor]);
+  }, [terminalTheme]);
 
   const isRunning = state === "Running";
 
@@ -308,15 +309,15 @@ export function TerminalView({
       />
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="card flex min-h-0 flex-1 flex-col">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b-[4px] border-ink bg-surface-variant px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b-[4px] border-ink bg-terminal-header px-3 pb-1">
             <div className="flex items-center gap-2">
               <IconFolder />
-              <span className="inline-flex items-center gap-1.5 border-2 border-ink bg-surface-container-lowest px-2 py-1 font-mono text-xs font-bold tracking-wide break-all">
+              <span className="inline-flex items-center gap-1.5 border-2 border-ink bg-surface-container-lowest px-3 py-1 font-mono text-xs font-bold tracking-wide break-all">
                 {liveCwd || "~"}
               </span>
             </div>
-            <div className="flex gap-2">
-              <button type="button" className={`${actionBtn} bg-surface-container-lowest text-ink`} onClick={onEdit}>
+            <div className="flex gap-2 py-1">
+              <button type="button" className={`${actionBtn} bg-surface-container-lowest text-text`} onClick={onEdit}>
                 <IconEdit />
                 Edit
               </button>
@@ -336,7 +337,7 @@ export function TerminalView({
               ) : (
                 <button
                   type="button"
-                  className={`${actionBtn} bg-secondary text-ink`}
+                  className={`${actionBtn} bg-secondary text-on-secondary`}
                   onClick={startTerminal}
                 >
                   <IconPlay />
@@ -352,12 +353,12 @@ export function TerminalView({
           <div className="relative min-h-0 flex-1">
             <div
               className="absolute inset-0 p-2"
-              style={{ backgroundColor: terminalBackgroundColor }}
+              style={{ backgroundColor: terminalTheme.background }}
               data-testid="terminal-view"
               ref={containerRef}
             />
             <div
-              className={`pointer-events-none absolute inset-0 ${crtFilterEnabled ? "scanlines" : ""} ${!isRunning ? "bg-gray-700" : ""}`}
+              className={`pointer-events-none absolute inset-0 ${crtFilterEnabled ? "scanlines" : ""} ${!isRunning ? "bg-terminal-idle" : ""}`}
               aria-hidden="true"
             />
             {!isRunning && (
@@ -375,7 +376,7 @@ export function TerminalView({
                 <button
                   type="button"
                   aria-label="Start terminal"
-                  className="btn bg-secondary text-ink"
+                  className="btn bg-secondary text-on-secondary"
                   onClick={startTerminal}
                 >
                   <IconPlay />

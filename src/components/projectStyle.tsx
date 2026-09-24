@@ -76,6 +76,7 @@ export type ProjectColor = {
   key: string;
   label: string;
   hex: string;
+  readableOn: string;
   /// Solid accent fill (sidebar dot, swatch buttons). Carries a `color` too,
   /// so anything drawn *inside* the fill (the sidebar's project icon) stays
   /// legible on both a near-black and a bright-yellow project.
@@ -92,7 +93,8 @@ function fromHex(key: string, label: string, hex: string): ProjectColor {
     key,
     label,
     hex,
-    swatch: { backgroundColor: hex, color: readableOn(hex) },
+    readableOn: readableOn(hex),
+    swatch: { backgroundColor: `${hex}D0`, color: readableOn(hex) },
     tint: { backgroundColor: lighten(hex, 0.86) },
     onInk: { color: lighten(hex, 0.6) },
   };

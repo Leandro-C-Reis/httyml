@@ -64,7 +64,7 @@ export function ConfigureProjectPage({ project, onCancel, onSubmit }: ConfigureP
         aria-label="Edit project"
         className="card relative flex flex-col gap-5 p-5 pt-0"
       >
-        <div className="-mx-5 mb-1 flex h-8 shrink-0 items-center gap-1.5 border-b-[4px] border-ink bg-ink px-4">
+        <div className="-mx-5 mb-1 flex h-8 shrink-0 items-center gap-1.5 border-b-[4px] border-card-border bg-card-header px-4">
           <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-error" />
           <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-secondary" />
           <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-tertiary" />
@@ -122,7 +122,7 @@ export function ConfigureProjectPage({ project, onCancel, onSubmit }: ConfigureP
                   style={{ backgroundColor: option.hex }}
                   className={`h-9 w-9 cursor-pointer rounded-none border-ink ${
                     option.key === color
-                      ? "border-[4px] shadow-[4px_4px_0_var(--color-ink)]"
+                      ? "border-[4px] shadow-[4px_4px_0_var(--color-hard-shadow)]"
                       : "border-[3px] shadow-none"
                   }`}
                 />
@@ -161,8 +161,8 @@ export function ConfigureProjectPage({ project, onCancel, onSubmit }: ConfigureP
                   onClick={() => setIcon(key)}
                   className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded-none border-ink ${
                     key === icon
-                      ? "border-[4px] bg-secondary text-on-secondary shadow-[4px_4px_0_var(--color-ink)]"
-                      : "border-[3px] bg-surface-container-lowest text-ink shadow-none"
+                      ? "border-[4px] bg-secondary text-on-secondary shadow-[4px_4px_0_var(--color-hard-shadow)]"
+                      : "border-[3px] bg-surface-container-lowest text-text shadow-none"
                   }`}
                 >
                   <Icon />
@@ -172,7 +172,7 @@ export function ConfigureProjectPage({ project, onCancel, onSubmit }: ConfigureP
           </fieldset>
         </section>
         <div className="flex justify-end gap-3 border-t-[4px] border-ink pt-4">
-          <button type="button" className="btn bg-surface-container-lowest text-ink" onClick={onCancel}>
+          <button type="button" className="btn bg-surface-container-lowest text-text" onClick={onCancel}>
             <IconX />
             Cancel
           </button>

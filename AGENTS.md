@@ -20,6 +20,25 @@ Tauri v2 project. Trigger `/tauri-v2` skill for: tauri.conf.json config, Rust `#
 
 App visual style: **neobrutalism**. Trigger `neobrutalism` skill (`.agents/skills/neobrutalism/SKILL.md`) for design-system guidance. Apply to all new UI work.
 
+## Frontend theme properties
+
+All application-owned colors must be semantic theme properties, not one-off
+fixed values. When adding or changing a color-controlled UI treatment:
+
+- Add its role to `ThemeColors` in `src/lib/theme.ts`, give it a value in
+  every preset, apply it through `applyAppearance`, and expose it in the
+  Settings color editor.
+- Use the resulting Tailwind semantic token or CSS variable in components.
+  Raw colors are allowed only for semantic error/warning states,
+  project-owned colors, and third-party brand artwork.
+- For terminal output or chrome, map the role through `terminalTheme` and
+  `TerminalView`; do not add terminal-specific hard-coded colors.
+- Preserve legacy local preferences and backup imports when evolving the
+  appearance schema. Export the versioned appearance object alongside legacy
+  fields.
+- Add or update tests for preset contrast, persistence/migration, Settings
+  controls, and the affected rendering path.
+
 <!-- ai-memory:start -->
 ## Long-term memory (ai-memory)
 
