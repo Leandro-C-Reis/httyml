@@ -44,6 +44,9 @@ type TerminalViewProps = {
   /// Whether to paint the visual CRT filter over terminal output.
   crtFilterEnabled: boolean;
   terminalTheme: TerminalTheme;
+  /// Keeps the App-owned tab metadata in sync with StateChanged events so
+  /// every mounted TerminalTabBar immediately reflects a start or stop.
+  onTerminalStateChange: (terminalId: string, state: TerminalState) => void;
   // Surfaces a failure that isn't tied to a discrete click the App-level
   // `runAction` wrapper could catch: attach happens inside this
   // component's own mount effect, and a failed Stop/Start shouldn't just
@@ -90,6 +93,7 @@ export function TerminalView({
   onScriptsChange,
   crtFilterEnabled,
   terminalTheme,
+  onTerminalStateChange,
   onError,
 }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -140,6 +144,7 @@ export function TerminalView({
         }
         hasReceivedInitialState = true;
         setState(msg.state);
+        onTerminalStateChange(terminalId, msg.state);
       }
     };
 
@@ -198,7 +203,7 @@ export function TerminalView({
       term.dispose();
       termRef.current = null;
     };
-  }, [terminalId]);
+  }, [terminalId, onTerminalStateChange]);
 
   useEffect(() => {
     const term = termRef.current;

@@ -7,7 +7,6 @@ import {
 } from "../lib/daemon";
 import { buildScriptCommand } from "../lib/scriptCommand";
 import { IconCheck, IconEdit, IconPackageJson, IconPlay, IconPlus,  IconTerminal, IconTrash, IconVisualStudioCode, IconX } from "./icons";
-import { projectColor } from "./projectStyle";
 
 type PanelKey = "project" | "package";
 
@@ -451,7 +450,7 @@ export function TerminalSideMenu({
               ) : (
                 <ul className="m-0 flex list-none flex-col gap-4 p-0">
                   {packageScripts.map(([name, command]) => (
-                    <li key={name} className="flex flex-row gap-1 border-2 border-ink p-2 shadow-[6px_6px_0_var(--color-hard-shadow)]" style={projectColor('blue').tint}>
+                    <li key={name} className="flex flex-row gap-1 border-2 border-ink p-2 shadow-[6px_6px_0_var(--color-hard-shadow)] bg-surface-variant">
                       <div className="flex flex-1 flex-col gap-1">
                         <span className="font-mono text-sm font-bold">{name}</span>
                         <code className="font-mono text-[0.6875rem] break-all text-on-surface-variant">

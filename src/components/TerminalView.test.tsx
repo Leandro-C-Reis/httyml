@@ -80,6 +80,7 @@ function renderTerminalView(overrides: Partial<Parameters<typeof TerminalView>[0
   const onDelete = vi.fn();
   const onSelectTab = vi.fn();
   const onAddTab = vi.fn();
+  const onTerminalStateChange = vi.fn();
   const onError = vi.fn();
   const { unmount } = render(
     <TerminalView
@@ -98,11 +99,12 @@ function renderTerminalView(overrides: Partial<Parameters<typeof TerminalView>[0
       activeTerminalId="abc123"
       onSelectTab={onSelectTab}
       onAddTab={onAddTab}
+      onTerminalStateChange={onTerminalStateChange}
       onError={onError}
       {...overrides}
     />,
   );
-  return { onEdit, onDelete, onSelectTab, onAddTab, onError, unmount };
+  return { onEdit, onDelete, onSelectTab, onAddTab, onTerminalStateChange, onError, unmount };
 }
 
 describe("TerminalView", () => {
@@ -155,6 +157,18 @@ describe("TerminalView", () => {
       handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Running" });
     });
     expect(mockWrite).not.toHaveBeenCalledWith("\x1b[?1049l");
+  });
+
+  it("forwards live StateChanged events to the App-owned tab metadata", async () => {
+    const { onTerminalStateChange } = renderTerminalView();
+    await waitFor(() => expect(daemon.onTerminalOutput).toHaveBeenCalled());
+    const handleMessage = vi.mocked(daemon.onTerminalOutput).mock.calls[0][1];
+
+    act(() => {
+      handleMessage({ type: "StateChanged", terminal_id: "abc123", state: "Stopped" });
+    });
+
+    expect(onTerminalStateChange).toHaveBeenCalledWith("abc123", "Stopped");
   });
 
   it("steps out of a stuck alternate screen buffer on a fresh start, without wiping the normal buffer's history", async () => {

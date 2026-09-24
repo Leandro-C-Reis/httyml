@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createProject,
   createTerminal,
@@ -576,6 +576,14 @@ function App() {
     }
   }
 
+  const handleTerminalStateChange = useCallback((terminalId: string, state: TerminalInfo["state"]) => {
+    setTerminals((current) =>
+      current.map((terminal) =>
+        terminal.id === terminalId ? { ...terminal, state } : terminal,
+      ),
+    );
+  }, []);
+
   const orderedTerminals = (selectedProjectId ? terminalOrderByProject[selectedProjectId] : undefined)
     ?.map((id) => terminals.find((t) => t.id === id))
     .filter((t): t is TerminalInfo => t !== undefined) ?? [];
@@ -952,6 +960,7 @@ function App() {
                         }
                         crtFilterEnabled={crtFilterEnabled}
                         terminalTheme={terminalTheme(appearance.colors)}
+                        onTerminalStateChange={handleTerminalStateChange}
                         onError={setError}
                       />
                     </div>
