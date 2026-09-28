@@ -51,26 +51,64 @@ impl TestClient {
 
     /// Keep receiving Output frames until one contains `needle`, or time out.
     async fn expect_output_containing(&mut self, needle: &str) -> String {
+        self.expect_output_containing_all(&[needle]).await
+    }
+
+    /// A single Output frame can contain several command results. Check all
+    /// expected strings in the same stream so none are discarded between
+    /// separate assertions.
+    async fn expect_output_containing_all(&mut self, needles: &[&str]) -> String {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         let mut collected = String::new();
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
-                panic!("timed out waiting for output containing {needle:?}, got: {collected:?}");
+                panic!("timed out waiting for output containing {needles:?}, got: {collected:?}");
             }
             let frame = timeout(remaining, read_frame(&mut self.stream))
                 .await
                 .unwrap_or_else(|_| {
-                    panic!("timed out waiting for output containing {needle:?}, got: {collected:?}")
+                    panic!(
+                        "timed out waiting for output containing {needles:?}, got: {collected:?}"
+                    )
                 })
                 .unwrap();
             let msg: DaemonMessage = serde_json::from_slice(&frame).unwrap();
             if let DaemonMessage::Output { data, .. } = msg {
                 let bytes = STANDARD.decode(data).unwrap();
                 collected.push_str(&String::from_utf8_lossy(&bytes));
-                if collected.contains(needle) {
+                if needles.iter().all(|needle| collected.contains(needle)) {
                     return collected;
                 }
+            }
+        }
+    }
+
+    /// State and startup output may arrive in either order, and startup
+    /// output may already be in the scrollback received on attach.
+    async fn expect_state_with_output_containing(
+        &mut self,
+        expected: TerminalState,
+        needle: &str,
+        initial_output: &[u8],
+    ) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut state_seen = false;
+        let mut collected = String::from_utf8_lossy(initial_output).into_owned();
+        while !state_seen || !collected.contains(needle) {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            let frame = timeout(remaining, read_frame(&mut self.stream))
+                .await
+                .unwrap_or_else(|_| {
+                    panic!("timed out waiting for {expected:?} and {needle:?}, got: {collected:?}")
+                })
+                .unwrap();
+            match serde_json::from_slice::<DaemonMessage>(&frame).unwrap() {
+                DaemonMessage::StateChanged { state, .. } if state == expected => state_seen = true,
+                DaemonMessage::Output { data, .. } => {
+                    collected.push_str(&String::from_utf8_lossy(&STANDARD.decode(data).unwrap()));
+                }
+                _ => {}
             }
         }
     }
@@ -591,12 +629,13 @@ async fn restart_spawns_a_fresh_process_using_the_stored_config() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    match client.recv().await {
-        DaemonMessage::Scrollback { .. } => {}
+    let scrollback = match client.recv().await {
+        DaemonMessage::Scrollback { data, .. } => STANDARD.decode(data).unwrap(),
         other => panic!("expected Scrollback, got {other:?}"),
-    }
-    client.expect_state(TerminalState::Running).await;
-    client.expect_output_containing("restart-marker").await;
+    };
+    client
+        .expect_state_with_output_containing(TerminalState::Running, "restart-marker", &scrollback)
+        .await;
 
     client
         .send(&ClientMessage::Stop {
@@ -610,10 +649,10 @@ async fn restart_spawns_a_fresh_process_using_the_stored_config() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client.expect_state(TerminalState::Running).await;
-
     // The startup command ran again on the fresh process — same stored config.
-    client.expect_output_containing("restart-marker").await;
+    client
+        .expect_state_with_output_containing(TerminalState::Running, "restart-marker", &[])
+        .await;
 }
 
 #[tokio::test]
@@ -721,14 +760,16 @@ async fn process_exiting_on_its_own_transitions_to_exited_with_exit_code() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    match client.recv().await {
-        DaemonMessage::Scrollback { .. } => {}
+    let scrollback = match client.recv().await {
+        DaemonMessage::Scrollback { data, .. } => STANDARD.decode(data).unwrap(),
         other => panic!("expected Scrollback, got {other:?}"),
-    }
-
-    client.expect_output_containing("before-exit").await;
+    };
     client
-        .expect_state(TerminalState::Exited { exit_code: 7 })
+        .expect_state_with_output_containing(
+            TerminalState::Exited { exit_code: 7 },
+            "before-exit",
+            &scrollback,
+        )
         .await;
 }
 
@@ -806,15 +847,16 @@ async fn restart_works_from_exited_same_as_from_stopped() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    match client.recv().await {
-        DaemonMessage::Scrollback { .. } => {}
+    let scrollback = match client.recv().await {
+        DaemonMessage::Scrollback { data, .. } => STANDARD.decode(data).unwrap(),
         other => panic!("expected Scrollback, got {other:?}"),
-    }
+    };
     client
-        .expect_output_containing("exited-restart-marker")
-        .await;
-    client
-        .expect_state(TerminalState::Exited { exit_code: 1 })
+        .expect_state_with_output_containing(
+            TerminalState::Exited { exit_code: 1 },
+            "exited-restart-marker",
+            &scrollback,
+        )
         .await;
 
     client
@@ -822,11 +864,9 @@ async fn restart_works_from_exited_same_as_from_stopped() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client.expect_state(TerminalState::Running).await;
-
     // The startup command ran again on the fresh process — same stored config.
     client
-        .expect_output_containing("exited-restart-marker")
+        .expect_state_with_output_containing(TerminalState::Running, "exited-restart-marker", &[])
         .await;
 }
 
@@ -1566,12 +1606,14 @@ async fn empty_shell_string_falls_back_to_the_default_shell() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    match client.recv().await {
-        DaemonMessage::Scrollback { .. } => {}
+    let scrollback = match client.recv().await {
+        DaemonMessage::Scrollback { data, .. } => STANDARD.decode(data).unwrap(),
         other => panic!("expected Scrollback, got {other:?}"),
-    }
+    };
 
-    client.expect_output_containing("shell-fallback-ok").await;
+    if !String::from_utf8_lossy(&scrollback).contains("shell-fallback-ok") {
+        client.expect_output_containing("shell-fallback-ok").await;
+    }
 }
 
 #[tokio::test]
@@ -1859,8 +1901,9 @@ async fn config_survives_a_daemon_restart() {
             terminal_id: terminal_id.clone(),
         })
         .await;
-    client_b.expect_state(TerminalState::Running).await;
-    client_b.expect_output_containing("persisted-marker").await;
+    client_b
+        .expect_state_with_output_containing(TerminalState::Running, "persisted-marker", &[])
+        .await;
 
     client_b
         .send(&ClientMessage::Write {
@@ -1869,9 +1912,8 @@ async fn config_survives_a_daemon_restart() {
         })
         .await;
     client_b
-        .expect_output_containing("VAR-IS-persisted-value")
+        .expect_output_containing_all(&["VAR-IS-persisted-value", &cwd])
         .await;
-    client_b.expect_output_containing(&cwd).await;
 }
 
 #[tokio::test]
@@ -2207,8 +2249,13 @@ async fn ping_reports_this_process_build_id() {
     client.send(&ClientMessage::Ping).await;
 
     match client.recv().await {
-        DaemonMessage::Pong { build_id, version, .. } => {
-            assert!(!build_id.is_empty(), "expected a non-empty build id in Pong");
+        DaemonMessage::Pong {
+            build_id, version, ..
+        } => {
+            assert!(
+                !build_id.is_empty(),
+                "expected a non-empty build id in Pong"
+            );
             assert_eq!(version.as_deref(), Some(env!("CARGO_PKG_VERSION")));
         }
         other => panic!("expected Pong, got {other:?}"),
