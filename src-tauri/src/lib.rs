@@ -129,6 +129,7 @@ struct DaemonStatus {
     state: String,
     pid: Option<u32>,
     build_id: Option<String>,
+    version: Option<String>,
     log_path: String,
 }
 
@@ -141,52 +142,84 @@ struct DaemonLogs {
 
 async fn daemon_status_snapshot() -> DaemonStatus {
     match tokio::time::timeout(DAEMON_TIMEOUT, send_one(ClientMessage::Ping)).await {
-        Ok(Ok(DaemonMessage::Pong { build_id, pid })) => DaemonStatus {
+        Ok(Ok(DaemonMessage::Pong { build_id, version, pid })) => DaemonStatus {
             state: "Running".to_string(),
             pid: Some(pid),
             build_id: Some(build_id),
+            version: Some(version.unwrap_or_else(|| "0.1.0".to_string())),
             log_path: default_log_path().display().to_string(),
         },
         _ if is_daemon_running().await => DaemonStatus {
             state: "Unresponsive".to_string(),
             pid: read_daemon_pid(),
             build_id: None,
+            version: None,
             log_path: default_log_path().display().to_string(),
         },
         _ => DaemonStatus {
             state: "Stopped".to_string(),
             pid: None,
             build_id: None,
+            version: None,
             log_path: default_log_path().display().to_string(),
         },
     }
 }
 
-/// Runs the sidecar binary itself with `--build-id` (exits immediately,
-/// never touches the socket) to learn what build is actually on disk right
-/// now, independent of whatever's currently running.
-async fn on_disk_build_id(app: &AppHandle) -> Result<String, String> {
+/// Query the bundled sidecar without starting a daemon or touching its socket.
+async fn on_disk_daemon_version(app: &AppHandle) -> Result<String, String> {
     let output = app
         .shell()
         .sidecar("httyml-daemon")
         .map_err(|e| e.to_string())?
-        .args(["--build-id"])
+        .args(["--version"])
         .output()
         .await
         .map_err(|e| e.to_string())?;
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    if !output.status.success() {
+        return Err("could not read bundled daemon version".to_string());
+    }
+    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if version.is_empty() {
+        return Err("bundled daemon reported an empty version".to_string());
+    }
+    Ok(version)
 }
 
-/// True if a running Daemon's own reported build doesn't match what's on
-/// disk — including if it doesn't answer `Ping` at all, which covers a
-/// Daemon old enough to predate this handshake entirely.
+/// The previous released daemon reports a build id but has no version field.
+fn daemon_version(version: Option<String>) -> String {
+    version.unwrap_or_else(|| "0.1.0".to_string())
+}
+
+fn should_replace_daemon(running_version: Option<String>, bundled_version: &str) -> bool {
+    daemon_version(running_version) != bundled_version
+}
+
+/// A rebuild at the same daemon version must keep live terminal processes.
 async fn running_daemon_is_stale(app: &AppHandle) -> Result<bool, String> {
-    let running_build_id =
+    let running_version =
         match tokio::time::timeout(DAEMON_TIMEOUT, send_one(ClientMessage::Ping)).await {
-            Ok(Ok(DaemonMessage::Pong { build_id, .. })) => build_id,
-            _ => return Ok(true),
+            Ok(Ok(DaemonMessage::Pong { version, .. })) => version,
+            _ => return Err("daemon is unresponsive; use Force kill before replacing it".to_string()),
         };
-    Ok(running_build_id != on_disk_build_id(app).await?)
+    Ok(should_replace_daemon(running_version, &on_disk_daemon_version(app).await?))
+}
+
+#[cfg(test)]
+mod daemon_version_tests {
+    use super::should_replace_daemon;
+
+    #[test]
+    fn app_only_update_keeps_a_matching_daemon() {
+        assert!(!should_replace_daemon(Some("0.1.0".into()), "0.1.0"));
+        assert!(!should_replace_daemon(None, "0.1.0"));
+    }
+
+    #[test]
+    fn daemon_version_change_requires_replacement() {
+        assert!(should_replace_daemon(Some("0.1.0".into()), "0.2.0"));
+        assert!(should_replace_daemon(None, "0.2.0"));
+    }
 }
 
 async fn wait_until_daemon_stops() -> bool {
@@ -219,13 +252,8 @@ async fn ensure_daemon(app: AppHandle) -> Result<(), String> {
         if !running_daemon_is_stale(&app).await? {
             return Ok(());
         }
-        // A stale Daemon (a different build than what's on disk — usually
-        // left over from an earlier `tauri dev` session, or a crash that
-        // didn't clean up) is still holding the socket, silently shadowing
-        // whatever was just built. Replace it: this drops any live
-        // Terminal process back to `Stopped`, same as any other Daemon
-        // restart (see `TerminalHandle::reload`'s doc comment) — Terminals
-        // themselves aren't lost, since their config is persisted.
+        // A new daemon version replaces the running process. This ends live
+        // terminal processes while preserving their saved configuration.
         request_daemon_shutdown().await?;
     }
     spawn_daemon_sidecar(&app).await
@@ -760,6 +788,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(AttachedTerminals {
             entries: Arc::new(Mutex::new(HashMap::new())),
             next_connection_id: AtomicU64::new(1),

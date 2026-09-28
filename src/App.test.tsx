@@ -11,6 +11,8 @@ vi.mock("./lib/dialog", () => ({
   pickImportPath: vi.fn(),
 }));
 
+vi.mock("./components/WindowTitleBar", () => ({ WindowTitleBar: () => <header>HTTYML</header> }));
+
 vi.mock("./lib/daemon", () => ({
   ensureDaemon: vi.fn().mockResolvedValue(undefined),
   getDaemonStatus: vi.fn().mockResolvedValue({ state: "Running", pid: 1234, build_id: "build-1", log_path: "/tmp/httyml.log" }),
@@ -204,9 +206,9 @@ describe("App", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Settings" }));
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Sunset" }));
-    expect(localStorage.getItem("httyml.theme")).toBe("sunset");
-    expect(document.documentElement.style.getPropertyValue("--color-primary")).toBe("#ea580c");
+    await userEvent.click(screen.getByRole("button", { name: "Paper" }));
+    expect(localStorage.getItem("httyml.theme")).toBe("paper");
+    expect(document.documentElement.style.getPropertyValue("--color-primary")).toBe("#202020");
 
     await userEvent.click(screen.getByRole("button", { name: /back/i }));
     expect(await screen.findByRole("button", { name: /open project/i })).toBeInTheDocument();
@@ -218,21 +220,21 @@ describe("App", () => {
     render(<App />);
 
     await userEvent.click(await screen.findByRole("button", { name: "Settings" }));
-    await userEvent.click(screen.getByRole("button", { name: "Nightshade" }));
+    await userEvent.click(screen.getByRole("button", { name: "Midnight" }));
     await userEvent.click(screen.getByRole("button", { name: /export configuration/i }));
 
     expect(dialog.pickExportPath).toHaveBeenCalledWith("httyml-backup.json");
     await waitFor(() =>
       expect(daemon.exportConfig).toHaveBeenCalledWith("/tmp/httyml-backup.json", expect.objectContaining({
-        theme: "nightshade",
-        terminal_background: "#050505",
-        app_background: "#eeeeee",
+        theme: "midnight",
+        terminal_background: "#090b10",
+        app_background: "#111319",
         background_pattern: "horizontal-stripes",
         crt_filter_enabled: true,
         appearance: expect.objectContaining({
           version: 4,
-          theme: "nightshade",
-          colors: expect.objectContaining({ terminalBackground: "#050505" }),
+          theme: "midnight",
+          colors: expect.objectContaining({ terminalBackground: "#090b10" }),
         }),
       })),
     );
@@ -242,7 +244,7 @@ describe("App", () => {
   it("imports a config via the native open dialog, replacing the Project list and returning to the dashboard state", async () => {
     vi.mocked(daemon.listProjects).mockResolvedValue([project("p1", "Old Project")]);
     vi.mocked(dialog.pickImportPath).mockResolvedValue("/tmp/httyml-backup.json");
-    const forest = THEMES.find((theme) => theme.id === "forest")!.colors;
+    const deepSea = THEMES.find((theme) => theme.id === "deep-sea")!.colors;
     const {
       border: _border,
       text: _text,
@@ -250,15 +252,15 @@ describe("App", () => {
       cardHeader: _cardHeader,
       cardBorder: _cardBorder,
       ...v2Colors
-    } = forest;
+    } = deepSea;
     vi.mocked(daemon.importConfig).mockResolvedValue({
       projects: [project("p2", "Imported Project")],
       terminal_count: 3,
       extra: {
-        theme: "forest",
+        theme: "deep-sea",
         appearance: {
           version: 2,
-          theme: "forest",
+          theme: "deep-sea",
           colors: { ...v2Colors, ink: "#13579b" },
           backgroundPattern: "grid",
         },
@@ -275,7 +277,7 @@ describe("App", () => {
     await waitFor(() => expect(daemon.importConfig).toHaveBeenCalledWith("/tmp/httyml-backup.json"));
     expect(await screen.findByText(/imported 1 project and 3 terminals/i)).toBeInTheDocument();
     // The imported theme applied too.
-    expect(localStorage.getItem("httyml.theme")).toBe("forest");
+    expect(localStorage.getItem("httyml.theme")).toBe("deep-sea");
     expect(document.documentElement.style.getPropertyValue("--color-border")).toBe("#13579b");
     expect(document.documentElement.style.getPropertyValue("--color-text")).toBe("#13579b");
     expect(document.documentElement.style.getPropertyValue("--color-hard-shadow")).toBe("#13579b");

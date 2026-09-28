@@ -65,6 +65,7 @@ export type DaemonStatus = {
   state: "Running" | "Stopped" | "Unresponsive";
   pid: number | null;
   build_id: string | null;
+  version?: string | null;
   log_path: string;
 };
 

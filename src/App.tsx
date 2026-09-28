@@ -51,11 +51,13 @@ import {
 } from "./lib/theme";
 import { readCrtFilter, writeCrtFilter } from "./lib/crtFilter";
 import { readWorkspaceSession, writeWorkspaceSession } from "./lib/workspaceSession";
+import { useAppUpdater } from "./lib/useAppUpdater";
 import "./App.css";
 
 type TerminalFormState = { mode: "create" } | { mode: "edit"; terminalId: string } | null;
 
 function App() {
+  const updater = useAppUpdater();
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [terminals, setTerminals] = useState<TerminalInfo[]>([]);
@@ -106,6 +108,7 @@ function App() {
     state: "Stopped",
     pid: null,
     build_id: null,
+    version: null,
     log_path: "",
   });
   const [daemonLogs, setDaemonLogs] = useState<DaemonLogs>({
@@ -776,6 +779,26 @@ function App() {
           </button>
         </div>
       )}
+      {!updater.noticeDismissed &&
+        (updater.status.kind === "available" ||
+          updater.status.kind === "installing" ||
+          updater.status.kind === "installed" ||
+          (updater.status.kind === "error" && updater.status.duringInstall)) && (
+          <div role="status" className="flex flex-wrap items-center gap-3 border-b-[4px] border-ink bg-secondary px-4 py-2 font-mono text-xs font-bold text-on-secondary">
+            <span className="flex-1">
+              {updater.status.kind === "available"
+                ? `HTTYML ${updater.status.version} is available. A daemon update may end running Terminal processes when you restart.`
+                : updater.status.kind === "installing"
+                  ? `Installing ${updater.status.version}${updater.status.progress === null ? "…" : `: ${updater.status.progress}%`}`
+                  : updater.status.kind === "installed"
+                    ? `HTTYML ${updater.status.version} is installed. Restart now or later; a changed daemon version will end running Terminal processes on restart.`
+                    : `Update failed: ${updater.status.message}`}
+            </span>
+            {updater.status.kind === "available" && <button type="button" className="btn px-3 py-1 text-xs" onClick={() => void updater.installUpdate()}>Install update</button>}
+            {updater.status.kind === "installed" && <button type="button" className="btn px-3 py-1 text-xs" onClick={() => void updater.restartApp()}>Restart now</button>}
+            {updater.status.kind !== "installing" && <button type="button" className="btn bg-surface-container-lowest px-3 py-1 text-xs text-text" onClick={() => updater.setNoticeDismissed(true)}>Later</button>}
+          </div>
+        )}
       <div className="flex min-h-0 flex-1">
         <ProjectSidebar
           projects={projects}
@@ -813,6 +836,10 @@ function App() {
             onExport={(path) => void runAction(() => handleExportConfig(path))}
             onImport={(path) => void runAction(() => handleImportConfig(path))}
             statusMessage={configStatus}
+            updateStatus={updater.status}
+            onCheckForUpdates={updater.checkForUpdates}
+            onInstallUpdate={updater.installUpdate}
+            onRestartApp={updater.restartApp}
             daemonStatus={daemonStatus}
             daemonLogs={daemonLogs}
             onRefreshDaemon={() => runAction(() => refreshDaemonDetails(true))}

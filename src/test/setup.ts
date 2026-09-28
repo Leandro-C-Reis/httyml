@@ -1,6 +1,15 @@
 import "@testing-library/jest-dom/vitest";
 
-if (typeof globalThis.localStorage === "undefined") {
+let storageWorks = false;
+try {
+  globalThis.localStorage?.setItem("__httyml_test_probe", "ok");
+  storageWorks = globalThis.localStorage?.getItem("__httyml_test_probe") === "ok";
+  globalThis.localStorage?.removeItem("__httyml_test_probe");
+} catch {
+  // Node can expose localStorage without a backing --localstorage-file.
+}
+
+if (!storageWorks) {
   const values = new Map<string, string>();
   Object.defineProperty(globalThis, "localStorage", {
     configurable: true,

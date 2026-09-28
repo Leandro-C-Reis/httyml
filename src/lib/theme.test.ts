@@ -28,8 +28,8 @@ describe("theme", () => {
   });
 
   it("round-trips a written theme", () => {
-    writeTheme("sunset");
-    expect(readTheme()).toBe("sunset");
+    writeTheme("paper");
+    expect(readTheme()).toBe("paper");
   });
 
   it("paints every theme's palette onto the document root", () => {
@@ -71,12 +71,12 @@ describe("theme", () => {
   });
 
   it("migrates the legacy app and terminal backgrounds into the selected preset", () => {
-    localStorage.setItem("httyml.theme", "sunset");
+    localStorage.setItem("httyml.theme", "paper");
     localStorage.setItem("httyml.appBackground", "#123456");
     localStorage.setItem("httyml.terminalBackground", "#654321");
 
     const appearance = readAppearance();
-    expect(appearance.theme).toBe("sunset");
+    expect(appearance.theme).toBe("paper");
     expect(appearance.colors.appBackground).toBe("#123456");
     expect(appearance.colors.terminalBackground).toBe("#654321");
   });

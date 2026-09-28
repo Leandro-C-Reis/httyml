@@ -57,6 +57,7 @@ export function WindowTitleBar() {
       <div className="ml-auto flex items-center gap-2" onMouseDown={(event) => event.stopPropagation()}>
         <button
           type="button"
+          aria-label="Minimize window"
           className={`${controlBase} bg-surface-container-lowest text-text`}
           onClick={() => invokeWindowAction(() => getCurrentWindow().minimize())}
         >
@@ -64,6 +65,7 @@ export function WindowTitleBar() {
         </button>
         <button
           type="button"
+          aria-label={isMaximized ? "Restore window" : "Maximize window"}
           className={`${controlBase} bg-secondary text-on-secondary`}
           onClick={() => invokeWindowAction(toggleMaximize)}
         >
@@ -71,6 +73,7 @@ export function WindowTitleBar() {
         </button>
         <button
           type="button"
+          aria-label="Close window"
           className={`${controlBase} bg-tertiary text-on-tertiary`}
           onClick={() => invokeWindowAction(() => getCurrentWindow().close())}
         >

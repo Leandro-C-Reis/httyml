@@ -25,7 +25,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": "appimage",
+    "targets": ["appimage", "deb", "rpm"],
+    "createUpdaterArtifacts": true,
     "externalBin": ["binaries/httyml-daemon"],
     "icon": [
       "icons/32x32.png",
@@ -34,5 +35,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI3NjM5NENGQkRDQjU4QjYKUldTMldNdTl6NVJqdDVTM0w1R1puMVIvNXZCQWxvNXMxdXN4TTNqYjFDQjRSTTZhT3F3NDQxNFEK",
+      "endpoints": [
+        "https://github.com/Leandro-C-Reis/httyml/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

@@ -37,6 +37,10 @@ function renderPage(overrides: Partial<Parameters<typeof SettingsPage>[0]> = {})
       onExport={onExport}
       onImport={onImport}
       statusMessage={null}
+      updateStatus={{ kind: "up-to-date" }}
+      onCheckForUpdates={vi.fn().mockResolvedValue(undefined)}
+      onInstallUpdate={vi.fn().mockResolvedValue(undefined)}
+      onRestartApp={vi.fn().mockResolvedValue(undefined)}
       daemonStatus={{ state: "Running", pid: 1234, build_id: "build-1", log_path: "/tmp/httyml.log" }}
       daemonLogs={{ path: "/tmp/httyml.log", content: "[1] INFO daemon started", truncated: false }}
       onRefreshDaemon={onRefreshDaemon}
@@ -56,20 +60,20 @@ describe("SettingsPage", () => {
   });
 
   it("lists every theme and marks the current one as pressed", () => {
-    renderPage({ currentTheme: "sunset" });
+    renderPage({ currentTheme: "paper" });
 
     for (const theme of THEMES) {
       const button = screen.getByRole("button", { name: theme.label });
-      expect(button).toHaveAttribute("aria-pressed", theme.id === "sunset" ? "true" : "false");
+      expect(button).toHaveAttribute("aria-pressed", theme.id === "paper" ? "true" : "false");
     }
   });
 
   it("selects a theme when its card is clicked", async () => {
     const { onSelectTheme } = renderPage();
 
-    await userEvent.click(screen.getByRole("button", { name: "Forest" }));
+    await userEvent.click(screen.getByRole("button", { name: "Paper" }));
 
-    expect(onSelectTheme).toHaveBeenCalledWith("forest");
+    expect(onSelectTheme).toHaveBeenCalledWith("paper");
   });
 
   it("keeps the Appearance controls in an internal scroll container", () => {
@@ -128,6 +132,28 @@ describe("SettingsPage", () => {
     renderPage({ statusMessage: "Imported 2 projects and 3 terminals." });
 
     expect(screen.getByText("Imported 2 projects and 3 terminals.")).toBeInTheDocument();
+  });
+
+  it("offers update installation and an explicit restart choice", async () => {
+    const onInstallUpdate = vi.fn().mockResolvedValue(undefined);
+    const onRestartApp = vi.fn().mockResolvedValue(undefined);
+    renderPage({
+      updateStatus: { kind: "available", version: "0.2.0" },
+      onInstallUpdate,
+      onRestartApp,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Install update" }));
+    expect(onInstallUpdate).toHaveBeenCalledTimes(1);
+    expect(onRestartApp).not.toHaveBeenCalled();
+  });
+
+  it("offers restart after installation without triggering it automatically", async () => {
+    const onRestartApp = vi.fn().mockResolvedValue(undefined);
+    renderPage({ updateStatus: { kind: "installed", version: "0.2.0" }, onRestartApp });
+    expect(screen.getByText(/restart now or later/i)).toBeInTheDocument();
+    expect(onRestartApp).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Restart now" }));
+    expect(onRestartApp).toHaveBeenCalledTimes(1);
   });
 
   it("shows daemon details and confirms a restart before calling it", async () => {

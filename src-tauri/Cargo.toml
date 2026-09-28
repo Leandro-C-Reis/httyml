@@ -27,4 +27,6 @@ tokio = { version = "1", features = ["net", "sync", "io-util", "time"] }
 httyml-daemon = { path = "../daemon" }
 base64 = "0.22"
 tauri-plugin-dialog = "2.7.2"
+tauri-plugin-updater = "2.10.1"
+tauri-plugin-process = "2"
 

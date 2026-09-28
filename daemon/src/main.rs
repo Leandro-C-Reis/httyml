@@ -2,10 +2,13 @@
 async fn main() -> anyhow::Result<()> {
     // Lets the Tauri app query "what build is the on-disk binary" without
     // spawning a full daemon — used to compare against a running instance's
-    // own reported BUILD_ID and detect a stale one. Exits immediately,
-    // never touches the socket or config.
+    // build ID for diagnostics. Exits immediately without touching the socket.
     if std::env::args().nth(1).as_deref() == Some("--build-id") {
         println!("{}", httyml_daemon::BUILD_ID);
+        return Ok(());
+    }
+    if std::env::args().nth(1).as_deref() == Some("--version") {
+        println!("{}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
 
