@@ -1,9 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Generates a `BUILD_ID` constant that's different on every compile, so a
-/// running Daemon can be told apart from what's currently on disk — see
-/// `ensure_daemon` in the Tauri app, which uses this to detect and replace a
-/// stale Daemon process instead of silently talking to outdated code.
+/// Generates a diagnostic build ID. Daemon replacement uses the independent
+/// package version so rebuilding at the same version preserves live terminals.
 fn main() {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -17,7 +15,7 @@ fn main() {
 
     // Without this, cargo treats build.rs's own output as cacheable and
     // reuses the same BUILD_ID across incremental rebuilds that didn't
-    // touch build.rs itself — defeating the entire point.
+    // touch build.rs itself.
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed=build.rs");
 }

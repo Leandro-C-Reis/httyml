@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { pickExportPath, pickImportPath } from "../lib/dialog";
 import type { DaemonLogs, DaemonStatus } from "../lib/daemon";
+import type { UpdateStatus } from "../lib/useAppUpdater";
 import {
   BACKGROUND_PATTERNS,
   contrastRatio,
@@ -34,6 +35,10 @@ type SettingsPageProps = {
   /// `null` clears it. Owned by the parent since it outlives this page's own
   /// state (surviving, e.g., a navigate-away-and-back).
   statusMessage: string | null;
+  updateStatus: UpdateStatus;
+  onCheckForUpdates: () => Promise<void>;
+  onInstallUpdate: () => Promise<void>;
+  onRestartApp: () => Promise<void>;
   daemonStatus: DaemonStatus;
   daemonLogs: DaemonLogs;
   onRefreshDaemon: () => Promise<void>;
@@ -112,6 +117,10 @@ export function SettingsPage({
   onExport,
   onImport,
   statusMessage,
+  updateStatus,
+  onCheckForUpdates,
+  onInstallUpdate,
+  onRestartApp,
   daemonStatus,
   daemonLogs,
   onRefreshDaemon,
@@ -357,6 +366,26 @@ export function SettingsPage({
           </div>
         </section>
         <aside className="flex min-h-0 min-w-0 flex-col gap-5 xl:overflow-y-auto xl:pr-2">
+          <section className="card flex flex-col gap-3 p-5" aria-labelledby="updates-heading">
+            <h2 id="updates-heading" className="m-0 inline-block w-fit border-b-2 border-ink pb-1.5 font-display text-xl font-bold uppercase">Updates</h2>
+            <p className="m-0 font-mono text-sm text-on-surface-variant">
+              Updates are signed. If the bundled daemon version changes, restarting the app ends running Terminal processes.
+            </p>
+            <p role="status" className="m-0 font-mono text-sm">
+              {updateStatus.kind === "idle" ? "Update checks are available in the desktop app." :
+                updateStatus.kind === "checking" ? "Checking for updates…" :
+                  updateStatus.kind === "up-to-date" ? "You're up to date." :
+                    updateStatus.kind === "available" ? `Version ${updateStatus.version} is available.${updateStatus.notes ? ` ${updateStatus.notes}` : ""}` :
+                      updateStatus.kind === "installing" ? `Installing ${updateStatus.version}${updateStatus.progress === null ? "…" : `: ${updateStatus.progress}%`}` :
+                        updateStatus.kind === "installed" ? `Version ${updateStatus.version} is installed. Restart now or later.` :
+                          `Update error: ${updateStatus.message}`}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="btn bg-surface-container-lowest px-3 py-1.5 text-xs text-text" disabled={updateStatus.kind === "checking" || updateStatus.kind === "installing" || updateStatus.kind === "installed"} onClick={() => void onCheckForUpdates()}>Check for updates</button>
+              {updateStatus.kind === "available" && <button type="button" className="btn px-3 py-1.5 text-xs" onClick={() => void onInstallUpdate()}>Install update</button>}
+              {updateStatus.kind === "installed" && <button type="button" className="btn px-3 py-1.5 text-xs" onClick={() => void onRestartApp()}>Restart now</button>}
+            </div>
+          </section>
           <section className="card flex flex-col gap-3 p-5" aria-labelledby="daemon-heading">
             <div className="-mx-5 -mt-5 mb-1 flex h-8 shrink-0 items-center gap-1.5 border-b-[4px] border-card-border bg-card-header px-4">
               <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-error" />
@@ -383,6 +412,10 @@ export function SettingsPage({
               <div>
                 <dt className="font-bold uppercase text-on-surface-variant">Build</dt>
                 <dd className="m-0 break-all">{daemonStatus.build_id ?? "—"}</dd>
+              </div>
+              <div>
+                <dt className="font-bold uppercase text-on-surface-variant">Version</dt>
+                <dd className="m-0 break-all">{daemonStatus.version ?? "—"}</dd>
               </div>
             </dl>
             <div className="flex flex-wrap gap-2">

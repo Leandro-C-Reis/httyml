@@ -2207,10 +2207,10 @@ async fn ping_reports_this_process_build_id() {
     client.send(&ClientMessage::Ping).await;
 
     match client.recv().await {
-        DaemonMessage::Pong { build_id, .. } => assert!(
-            !build_id.is_empty(),
-            "expected a non-empty build id in Pong"
-        ),
+        DaemonMessage::Pong { build_id, version, .. } => {
+            assert!(!build_id.is_empty(), "expected a non-empty build id in Pong");
+            assert_eq!(version.as_deref(), Some(env!("CARGO_PKG_VERSION")));
+        }
         other => panic!("expected Pong, got {other:?}"),
     }
 }

@@ -783,6 +783,7 @@ async fn handle_message(
                 writer,
                 &DaemonMessage::Pong {
                     build_id: crate::BUILD_ID.to_string(),
+                    version: Some(env!("CARGO_PKG_VERSION").to_string()),
                     pid: std::process::id(),
                 },
             )

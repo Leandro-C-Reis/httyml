@@ -122,9 +122,7 @@ pub enum ClientMessage {
         projects: Vec<ProjectInfo>,
         terminals: Vec<TerminalConfigInfo>,
     },
-    /// Asks the Daemon to report its build — see `DaemonMessage::Pong` and
-    /// `ensure_daemon` in the Tauri app, which uses this to tell a stale
-    /// Daemon process apart from the one on disk.
+    /// Asks the Daemon to report its version and build.
     Ping,
     /// Terminates the Daemon process immediately. A local, same-user Unix
     /// socket already grants full control over every Terminal (stop,
@@ -248,9 +246,11 @@ pub enum DaemonMessage {
     Error {
         message: String,
     },
-    /// Reply to `ClientMessage::Ping`, reporting this process's `BUILD_ID`.
+    /// Reply to `ClientMessage::Ping`. Older daemons omit `version`.
     Pong {
         build_id: String,
+        #[serde(default)]
+        version: Option<String>,
         pid: u32,
     },
 }
