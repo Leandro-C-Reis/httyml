@@ -271,10 +271,26 @@ function App() {
   }
 
   useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const status = await getDaemonStatus();
+        if (!cancelled) setDaemonStatus(status);
+      } catch {
+        // A transient status check should not interrupt the workspace.
+      }
+    };
+    const interval = setInterval(() => void poll(), 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [ready]);
+
+  useEffect(() => {
     if (!ready || !showSettings) return;
     void refreshDaemonDetails(true).catch(() => undefined);
-    const interval = setInterval(() => void refreshDaemonDetails().catch(() => undefined), 2000);
-    return () => clearInterval(interval);
   }, [ready, showSettings]);
 
   async function refreshActiveTerminalCounts(projectList: ProjectInfo[] = projects) {
@@ -806,6 +822,7 @@ function App() {
           onSelect={(id) => void runAction(() => handleSelectProject(id))}
           onCreate={(name) => void runAction(() => handleCreateProject(name))}
           activeTerminalCounts={activeTerminalCounts}
+          daemonState={ready ? daemonStatus.state : "Checking"}
           onGoHome={handleGoHome}
         />
         <main

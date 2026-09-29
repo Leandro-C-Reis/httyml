@@ -80,6 +80,9 @@ vi.mock("./components/TerminalView", () => ({
 describe("App", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(daemon.getDaemonStatus).mockResolvedValue({
+      state: "Running", pid: 1234, build_id: "build-1", log_path: "/tmp/httyml.log",
+    });
     try {
       localStorage.clear();
     } catch {
@@ -98,6 +101,21 @@ describe("App", () => {
       expect(daemon.ensureDaemon).toHaveBeenCalled();
       expect(daemon.listProjects).toHaveBeenCalled();
     });
+  });
+
+  it("shows the current daemon status in the sidebar", async () => {
+    vi.mocked(daemon.getDaemonStatus).mockResolvedValue({
+      state: "Running", pid: 1234, build_id: "build-1", log_path: "/tmp/httyml.log",
+    });
+    render(<App />);
+    const nav = screen.getByRole("navigation", { name: "Projects" });
+    expect(await within(nav).findByText("Daemon online")).toBeInTheDocument();
+
+    vi.mocked(daemon.getDaemonStatus).mockResolvedValue({
+      state: "Stopped", pid: null, build_id: null, log_path: "/tmp/httyml.log",
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(await within(nav).findByText("Daemon offline")).toBeInTheDocument();
   });
 
   it("shows the project dashboard before any project is selected", async () => {
