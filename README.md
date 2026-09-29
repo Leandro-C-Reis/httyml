@@ -1,31 +1,108 @@
-# httyml
+<p align="center">
+  <img src="public/logo.svg" alt="HTTYML logo" width="160" />
+</p>
 
-Desktop app (Tauri + React + TypeScript) for managing dev projects, where each Project groups a set of persistent Linux Terminals used to run dev commands.
+# HTTYML
 
-## Architecture
+**Persistent local terminals, organized around your projects.**
 
-- **App** — Tauri/React frontend, client only. Connects/disconnects to Daemon via socket, never persists state itself.
-- **Daemon** — separate process, bundled as a Tauri sidecar. Owns and keeps PTYs alive even with app closed. Starts on-demand.
-- **Terminal** — interactive shell session (PTY) managed by Daemon: name (optional), cwd, startup command (optional), env vars, shell, scrollback size. Always local, never SSH.
-- **Project** — logical grouping of Terminals, identified by name only. No fixed root directory.
+HTTYML is a Linux desktop app for keeping the terminals you use for development in one place. Create a Project, give each Terminal its own working directory and commands, and return to your work after closing the app. A separate Daemon keeps Terminal processes running until they exit or you stop them.
 
-See [CONTEXT.md](CONTEXT.md) for domain vocabulary and [docs/adr/](docs/adr/) for design decisions.
+[![Release](https://img.shields.io/github/v/release/Leandro-C-Reis/httyml)](https://github.com/Leandro-C-Reis/httyml/releases/latest)
+![Rust](https://img.shields.io/badge/rust-1.95+-blue)
 
-## Terminal states
 
-`running` (active process), `stopped` (user-stopped, config preserved), `exited` (process died on its own, exit code kept).
+## Why I built it
 
-## Dev setup
+> I built HTTYML because I needed a simpler way to manage my terminals. I tried tmux, Alacritty + Zellij, and other setups, but none of them suited my workflow. They are great tools, just not the right fit for how I like to work, so I created my own.
+
+I wanted a visual way to group the terminals I use for a project, set each one up once, and leave long-running commands alone when I close the window. HTTYML is built around that workflow. It manages local shell processes directly, without requiring another terminal multiplexer.
+
+## What you can do
+
+- **Keep work running:** Closing the app disconnects its UI; the Daemon keeps active Terminal processes alive.
+- **Organize by Project:** Group related Terminals without forcing them into one root directory. Each Terminal has its own working directory.
+- **Configure each Terminal:** Choose its shell, name, startup command, environment variables, and scrollback limit.
+- **Return to your output:** Reopen a Terminal to reconnect to its process and see its saved scrollback.
+- **Manage the lifecycle:** Start, stop, restart, or delete a Terminal. Stopping preserves its configuration; deleting removes it.
+- **Move your setup:** Export and import Project and Terminal configuration as JSON.
+
+For example, one Project can hold a dev server, test runner, and shell, each in a different directory. Closing HTTYML leaves the server and test runner running; opening the app again lets you reconnect to them.
+
+HTTYML currently runs Terminals **locally on Linux**. Remote SSH Terminals are not natively supported, although you might be able to work around this with SSH tunnels or other methods.
+
+## Screenshots
+
+### Start with a Project
+
+The empty workspace puts Project creation in the sidebar.
+
+![HTTYML empty workspace with the New Project control in the sidebar](docs/00_blank_screen.png)
+
+### Configure a Terminal
+
+Set a Terminal's name, startup command, and working directory before creating it.
+
+![Terminal configuration form showing name, startup command, and directory fields](docs/01_configure_terminal.png)
+
+### Work in a Terminal
+
+Switch between Terminal tabs, use the shell, and manage the active process from its toolbar.
+
+![Project view with an active Terminal, shell output, tabs, and process controls](docs/02_terminal_usage.png)
+
+### Customize the app
+
+Settings include theme presets and UI colors alongside update checks and Daemon status.
+
+![Settings page showing color themes, update controls, and Daemon details](docs/03_customize_themes.png)
+
+## Install
+
+Download the latest version from [GitHub Releases](https://github.com/Leandro-C-Reis/httyml/releases/latest). Builds are available for **x86_64** and **ARM64**:
+
+| Package | Use it for |
+| --- | --- |
+| AppImage | A portable app without package installation |
+| DEB | Debian-based distributions |
+| RPM | RPM-based distributions |
+
+After installation, create a Project and add a Terminal. Set its working directory and, if useful, a startup command such as `npm run dev`.
+
+The app checks for signed updates when it starts. You choose whether to install an available update and whether to restart now or later. If an update changes the bundled Daemon version, the new app replaces the old Daemon on launch, which stops its running Terminal processes. DEB and RPM updates may require system privileges.
+
+## How it works
+
+| Part | Responsibility |
+| --- | --- |
+| **Project** | A logical group of Terminals, identified by name rather than a fixed directory. |
+| **Terminal** | An interactive local shell (PTY) with its own configuration and scrollback. |
+| **Daemon** | A separate Rust process that owns Terminal processes and persists their configuration. |
+| **App** | A Tauri, React, and TypeScript client that connects to the Daemon over a local socket. |
+
+A Terminal can be **running** (process active), **stopped** (stopped by you, configuration retained), or **exited** (process ended on its own, with its exit code retained). Terminal processes survive closing the app, while saved configuration survives a Daemon restart. Reconnection happens when you open a Terminal in the app.
+
+See [CONTEXT.md](CONTEXT.md) for project terms and [docs/adr/](docs/adr/) for design decisions.
+
+## Develop locally
+
+Install Node.js, Rust, and the Linux dependencies required by Tauri v2. Then run:
 
 ```bash
-npm install
-npm run dev      # builds daemon sidecar, then starts Vite + Tauri dev
-npm test         # vitest
+npm ci
+npm run tauri dev
 ```
 
-Daemon lives in [daemon/](daemon/) (Rust), built via `scripts/build-daemon-sidecar.sh`.
+Tauri starts the Vite frontend and builds the Daemon sidecar through `scripts/build-daemon-sidecar.sh`. To run the tests:
 
-## Linux releases
+```bash
+npm test
+cargo test --workspace
+```
+
+The Daemon source lives in [daemon/](daemon/).
+
+## Linux release process
 
 GitHub Actions builds AppImage, DEB, and RPM packages for x86_64 and ARM64 on a
 stable `vMAJOR.MINOR.PATCH` tag. The workflow checks the app version in
@@ -42,12 +119,6 @@ protocol changes. The release check rejects daemon changes without a version
 bump. An app-only release can therefore keep a running daemon and its Terminal
 processes alive after the app restarts.
 
-The updater checks the public GitHub Release manifest when the desktop app
-starts. Users choose whether to install and whether to restart now or later.
-If the bundled daemon version changed, the first app startup after restarting
-replaces the old daemon and ends running Terminal processes. AppImage updates
-replace the portable image; DEB and RPM updates may request system privileges.
-
 Update bundles are signed with Tauri's updater key. The public key is in the
 Tauri config; GitHub Actions uses the `TAURI_SIGNING_PRIVATE_KEY` and
 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets. Keep a secure backup
@@ -58,19 +129,6 @@ with a replacement key. See the [Tauri updater guide](https://v2.tauri.app/plugi
 
 - [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
 
-## Roadmap
+## License
 
-- [x] 1. Fix TERM environment variable for all shells (currently only bash) `export TERM=xterm-256color`
-- [x] 2. Fix whiptail size not matching Terminal size (currently only bash)
-- [ ] 3. Terminal resize / font size / wheel zoom
-- [ ] 4. Daemon auto-restart / health check with app-side reconnect banner
-- [x] 5. Global keyboard shortcuts for Terminal switching
-- [x] 6. Export/import Project + Terminal configs as JSON
-- [ ] 7. Themeable terminal color schemes
-- [x] 8. Automated build release for Linux (Tauri)
-- [ ] 9. Project templates (predefined Terminal set with cwd/startup command)
-- [ ] 10. Per-Terminal notifications on process exit or pattern match (e.g. "Build failed")
-- [ ] 11. Layout presets — split panes, grid view for multiple Terminals at once
-- [ ] 12. Remote Daemon support (opt-in, currently local-only by design — see ADR-0005)
-- [ ] 13. Terminal search / fuzzy jump across all Projects
-- [ ] 14. Session recording + replay of Terminal output
+MIT - see [LICENSE](LICENSE).
