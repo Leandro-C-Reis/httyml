@@ -34,7 +34,7 @@ export function WindowTitleBar() {
   async function toggleMaximize() {
     const currentWindow = getCurrentWindow();
     await currentWindow.toggleMaximize();
-    setIsMaximized(await currentWindow.isMaximized());
+    setIsMaximized(!(await currentWindow.isMaximized()));
   }
 
   return (
@@ -69,7 +69,7 @@ export function WindowTitleBar() {
           className={`${controlBase} bg-secondary text-on-secondary`}
           onClick={() => invokeWindowAction(toggleMaximize)}
         >
-          {isMaximized ?  <IconMaximize /> : <IconMinimize />}
+          {isMaximized ?  <IconMinimize /> : <IconMaximize /> }
         </button>
         <button
           type="button"

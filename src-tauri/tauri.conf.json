@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "httyml",
+  "productName": "HTTYML",
   "version": "0.1.0",
   "identifier": "com.leandro.httyml",
   "build": {
@@ -12,11 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "HTTYML // TERMINAL CORE",
-        "maximized": true,
+        "title": "HTTYML",
         "decorations": false,
-        "width": 800,
-        "height": 600
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "maximized": true
       }
     ],
     "security": {
