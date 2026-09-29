@@ -21,7 +21,7 @@ it("shows the daemon state and bundled app version in expanded and collapsed lay
   const nav = screen.getByRole("navigation", { name: "Projects" });
 
   expect(within(nav).getByRole("status")).toHaveTextContent("Daemon online");
-  expect(within(nav).getByRole("status").firstElementChild).toHaveClass("bg-secondary");
+  expect(within(nav).getByRole("status").firstElementChild).toHaveClass("bg-[#b6f300]");
   expect(within(nav).getByText(`App v${packageJson.version}`)).toBeInTheDocument();
 
   rerender(<ProjectSidebar {...props} daemonState="Stopped" />);
