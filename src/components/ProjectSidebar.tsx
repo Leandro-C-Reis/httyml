@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
-import type { ProjectInfo } from "../lib/daemon";
+import packageJson from "../../package.json";
+import type { DaemonStatus, ProjectInfo } from "../lib/daemon";
 import { IconArrowLeft, IconArrowRight, IconHome, IconPlus } from "./icons";
 import { projectColor, projectIcon } from "./projectStyle";
 
@@ -9,6 +10,7 @@ type ProjectSidebarProps = {
   onSelect: (projectId: string) => void;
   onCreate: (name: string) => void;
   activeTerminalCounts: Record<string, number>;
+  daemonState: DaemonStatus["state"] | "Checking";
   /// Clears the selection and shows the Active Projects dashboard.
   onGoHome: () => void;
 };
@@ -48,12 +50,35 @@ export function ProjectSidebar({
   onSelect,
   onCreate,
   activeTerminalCounts,
+  daemonState,
   onGoHome,
 }: ProjectSidebarProps) {
   const [name, setName] = useState("");
   // Remembered across sessions: whether the Projects list is out of the way
   // is a workspace preference, not per-visit state.
   const [collapsed, setCollapsed] = useState(readCollapsed);
+  const daemonLabelCollapsed =
+    daemonState === "Running"
+      ? "on"
+      : daemonState === "Stopped"
+        ? "off"
+        : daemonState === "Unresponsive"
+          ? "unresp"
+          : "check";
+  const daemonLabel =
+    daemonState === "Running"
+      ? "Daemon online"
+      : daemonState === "Stopped"
+        ? "Daemon offline"
+        : daemonState === "Unresponsive"
+          ? "Daemon unresponsive"
+          : "Daemon checking";
+  const daemonDotColor =
+    daemonState === "Running"
+      ? "bg-[#b6f300]"
+      : daemonState === "Unresponsive"
+        ? "bg-error"
+        : "bg-on-surface-variant";
 
   useEffect(() => {
     writeCollapsed(collapsed);
@@ -75,7 +100,14 @@ export function ProjectSidebar({
     >
       <div className={`w-full border-b-[3px] border-ink pb-3 ${collapsed ? "flex justify-center" : ""}`}>
         {collapsed ? (
-          <img src="logo.svg" width="64" alt="HTTYML Logo" />
+          <div className="flex flex-col items-start gap-2">
+            <img src="logo.svg" width="64" alt="HTTYML Logo" />
+            <span className="flex items-center gap-1 h-2">
+              <span role="status" aria-label={daemonLabel} title={daemonLabel} className={`h-2 w-2 border border-ink ${daemonDotColor}`} />
+              <span className="font-mono text-[0.625rem] font-bold text-on-surface-variant uppercase">{daemonLabelCollapsed}</span>
+            </span>
+            <span className="font-mono text-[0.625rem] font-bold text-on-surface-variant">v{packageJson.version}</span>
+          </div>
         ) : (
           <>
             <div className="flex items-center gap-2">
@@ -84,10 +116,11 @@ export function ProjectSidebar({
                 HTTYML
               </span>
             </div>
-            <span className="mt-1.5 flex items-center gap-1.5 font-mono text-[0.6875rem] font-bold tracking-wide text-on-surface-variant uppercase">
-              <span className="h-2 w-2 rounded-full border border-ink bg-secondary" />
-              System online
+            <span role="status" className="mt-1.5 flex items-center gap-1.5 font-mono text-[0.6875rem] font-bold tracking-wide text-on-surface-variant uppercase">
+              <span aria-hidden="true" className={`h-2 w-2 border border-ink ${daemonDotColor}`} />
+              {daemonLabel}
             </span>
+            <span className="mt-1 block font-mono text-[0.6875rem] font-bold text-on-surface-variant">App v{packageJson.version}</span>
           </>
         )}
       </div>

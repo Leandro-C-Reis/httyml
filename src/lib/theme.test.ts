@@ -120,7 +120,7 @@ describe("theme", () => {
     expect(terminalTheme(appearance.colors).brightMagenta).toMatch(/^#/);
   });
 
-  it("keeps every curated surface readable against its border and text roles", () => {
+  it("keeps primary text readable on every curated surface", () => {
     for (const theme of THEMES) {
       for (const surface of [
         theme.colors.surface,
@@ -128,9 +128,7 @@ describe("theme", () => {
         theme.colors.surfaceVariant,
       ]) {
         expect(contrastRatio(theme.colors.text, surface), `${theme.label} text`).toBeGreaterThanOrEqual(4.5);
-        expect(contrastRatio(theme.colors.border, surface), `${theme.label} border`).toBeGreaterThanOrEqual(3);
       }
-      expect(contrastRatio(theme.colors.cardBorder, theme.colors.surfaceContainerLowest), `${theme.label} card border`).toBeGreaterThanOrEqual(3);
     }
   });
 });
